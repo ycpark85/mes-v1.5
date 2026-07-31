@@ -1,5 +1,14 @@
 # Project Operations
 
+## MES v1.5 Baseline
+
+- MES v1.5 uses Git commit `4da47c94d361ec3e2b9eb3785fdacd5f53122f80` as its functional baseline.
+- The immutable baseline tag is `v1.5-baseline-4da47c9`.
+- Local development uses the independent `mes-v1.5` repository, its own `backend/.venv` and `backend/.env`, and the external `mes-v1.5-data` storage root.
+- The shared development database is currently aligned to Alembic head `29d3e4f5a6b7`; schema changes require a verified backup before migration.
+- Production backend deployment remains a reviewed fast-forward pull of `main`; internal and vendor WPF clients are built on the development computer and copied as separate release artifacts.
+- The detailed development, deployment, rollback, and project-separation procedure is in `docs/mes-v1.5-development-deployment.md`.
+
 ## Alembic Schema Verification
 
 - SQLAlchemy model and Alembic migration changes are complete only when `alembic check` reports no pending upgrade operations against the target database.
