@@ -1,6 +1,7 @@
-﻿using System;
+using System;
 using System.Collections.ObjectModel;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Net.Http;
@@ -19,6 +20,7 @@ namespace Mes.Wpf.Modules.InspectionSchedules.ViewModels
         private readonly IApiClient _apiClient;
         private readonly IMessageService _messageService;
         private readonly bool _canEdit;
+        private readonly bool _canRequestEdit;
 
         private long _inspectionScheduleId;
         private string _lotNo = string.Empty;
@@ -64,11 +66,16 @@ namespace Mes.Wpf.Modules.InspectionSchedules.ViewModels
         private DateTime? _nextInspectionDate;
         private string _partialReason = string.Empty;
         private string _memo = string.Empty;
+        private DateTimeOffset? _expectedUpdatedAt;
         private bool _isLoading;
         private bool _isRecalculatingInventoryPreview;
         private InspectionResultDefectEditModel? _selectedDefect;
 
         private ObservableCollection<InspectionStockLotDto> _stockLots = new();
+        private ObservableCollection<InspectionRoundSummaryDto> _rounds = new();
+        private string _scheduleStatus = string.Empty;
+        private int _inspectionRound;
+        private int _inspectionRoundCount;
         private bool _isAutoShipmentPreviewUpdating;
 
         private int _expectedShipQty;
@@ -76,6 +83,7 @@ namespace Mes.Wpf.Modules.InspectionSchedules.ViewModels
         public int ShipmentWaitingQty => ExpectedShipQty;
 
         public event Action<bool>? CloseRequested;
+        public event Action? EditRequested;
 
         public IApiClient ApiClient => _apiClient;
         public IMessageService MessageService => _messageService;
@@ -83,11 +91,13 @@ namespace Mes.Wpf.Modules.InspectionSchedules.ViewModels
         public InspectionResultWindowViewModel(
             IApiClient apiClient,
             IMessageService messageService,
-            bool canEdit = true)
+            bool canEdit = true,
+            bool canRequestEdit = false)
         {
             _apiClient = apiClient;
             _messageService = messageService;
             _canEdit = canEdit;
+            _canRequestEdit = canRequestEdit;
 
             Defects = new ObservableCollection<InspectionResultDefectEditModel>();
 
@@ -101,7 +111,13 @@ namespace Mes.Wpf.Modules.InspectionSchedules.ViewModels
             RemovePhotoCommand = new RelayCommand(
                 x => RemovePhoto(x as DefectAttachmentEditModel),
                 x => CanEdit && x is DefectAttachmentEditModel);
+            OpenPhotoCommand = new RelayCommand(
+                async x => await OpenPhotoAsync(x as DefectAttachmentEditModel),
+                x => !IsLoading && x is DefectAttachmentEditModel);
             SaveCommand = new AsyncRelayCommand(SaveAsync, () => CanEdit && !IsLoading);
+            EditCommand = new RelayCommand(
+                _ => EditRequested?.Invoke(),
+                _ => CanRequestEdit && !IsLoading);
             CancelCommand = new RelayCommand(_ => CloseRequested?.Invoke(false));
         }
         public ObservableCollection<InspectionStockLotDto> StockLots
@@ -251,7 +267,9 @@ namespace Mes.Wpf.Modules.InspectionSchedules.ViewModels
                 : AccumulatedGoodQty + AccumulatedDefectShipQty;
 
         public bool CanEdit => _canEdit;
+        public bool CanRequestEdit => _canRequestEdit && ScheduleStatus == "DONE";
         public bool IsReadOnlyMode => !CanEdit;
+        public string CloseButtonText => CanEdit ? "취소" : "닫기";
         public bool IsShipmentInputEnabled => CanEdit && !IsPartial;
 
         public int CurrentStockQty
@@ -453,6 +471,11 @@ namespace Mes.Wpf.Modules.InspectionSchedules.ViewModels
                         saveCommand.RaiseCanExecuteChanged();
                     }
 
+                    if (EditCommand is RelayCommand editCommand)
+                    {
+                        editCommand.RaiseCanExecuteChanged();
+                    }
+
                     if (AddDefectCommand is RelayCommand addDefectCommand)
                     {
                         addDefectCommand.RaiseCanExecuteChanged();
@@ -472,11 +495,66 @@ namespace Mes.Wpf.Modules.InspectionSchedules.ViewModels
                     {
                         removePhotoCommand.RaiseCanExecuteChanged();
                     }
+
+                    if (OpenPhotoCommand is RelayCommand openPhotoCommand)
+                    {
+                        openPhotoCommand.RaiseCanExecuteChanged();
+                    }
                 }
             }
         }
 
         public ObservableCollection<InspectionResultDefectEditModel> Defects { get; }
+
+        public ObservableCollection<InspectionRoundSummaryDto> Rounds
+        {
+            get => _rounds;
+            set => SetProperty(ref _rounds, value);
+        }
+
+        public string ScheduleStatus
+        {
+            get => _scheduleStatus;
+            set
+            {
+                if (SetProperty(ref _scheduleStatus, value))
+                {
+                    OnPropertyChanged(nameof(CanRequestEdit));
+                    if (EditCommand is RelayCommand editCommand)
+                    {
+                        editCommand.RaiseCanExecuteChanged();
+                    }
+                }
+            }
+        }
+
+        public int InspectionRound
+        {
+            get => _inspectionRound;
+            set
+            {
+                if (SetProperty(ref _inspectionRound, value))
+                {
+                    OnPropertyChanged(nameof(InspectionRoundDisplay));
+                }
+            }
+        }
+
+        public int InspectionRoundCount
+        {
+            get => _inspectionRoundCount;
+            set
+            {
+                if (SetProperty(ref _inspectionRoundCount, value))
+                {
+                    OnPropertyChanged(nameof(InspectionRoundDisplay));
+                }
+            }
+        }
+
+        public string InspectionRoundDisplay => InspectionRound > 0
+            ? $"{InspectionRound}차 / 총 {InspectionRoundCount}회"
+            : "-";
 
         public InspectionResultDefectEditModel? SelectedDefect
         {
@@ -488,8 +566,12 @@ namespace Mes.Wpf.Modules.InspectionSchedules.ViewModels
         public ICommand RemoveDefectCommand { get; }
         public ICommand UploadPhotoCommand { get; }
         public ICommand RemovePhotoCommand { get; }
+        public ICommand OpenPhotoCommand { get; }
         public ICommand SaveCommand { get; }
+        public ICommand EditCommand { get; }
         public ICommand CancelCommand { get; }
+
+        public Task RefreshAsync() => LoadAsync();
 
         public async Task InitializeAsync(
             long inspectionScheduleId,
@@ -562,6 +644,11 @@ namespace Mes.Wpf.Modules.InspectionSchedules.ViewModels
                 var accumulated = response?.Accumulated;
                 var inventory = response?.Inventory;
 
+                ScheduleStatus = response?.ScheduleStatus ?? string.Empty;
+                InspectionRound = response?.InspectionRound ?? 0;
+                InspectionRoundCount = response?.InspectionRoundCount ?? 0;
+                Rounds = response?.Rounds ?? new ObservableCollection<InspectionRoundSummaryDto>();
+
                 CurrentStockQty = inventory?.CurrentStockQty ?? 0;
                 ShipTargetQty = inventory?.ShipTargetQty ?? OrderQty;
                 AlreadyShippedQty = inventory?.AlreadyShippedQty ?? 0;
@@ -581,6 +668,7 @@ namespace Mes.Wpf.Modules.InspectionSchedules.ViewModels
 
                 if (dto == null)
                 {
+                    _expectedUpdatedAt = null;
                     GoodQty = 0;
                     DefectShipQty = 0;
                     DefectQty = 0;
@@ -613,6 +701,7 @@ namespace Mes.Wpf.Modules.InspectionSchedules.ViewModels
                 }
 
                 GoodQty = dto.GoodQty;
+                _expectedUpdatedAt = dto.UpdatedAt;
                 DefectShipQty = dto.DefectShipQty;
                 DefectQty = dto.DefectQty;
                 UninspectedQty = dto.UninspectedQty;
@@ -635,6 +724,10 @@ namespace Mes.Wpf.Modules.InspectionSchedules.ViewModels
                         var edit = new InspectionResultDefectEditModel
                         {
                             DefectTypeId = defect.DefectTypeId,
+                            DefectQty = defect.DefectQty,
+                            Disposition = string.IsNullOrWhiteSpace(defect.Disposition)
+                                ? "NOT_SHIPPABLE"
+                                : defect.Disposition,
                             DefectCode = string.Empty,
                             Category1Name = string.Empty,
                             Category2Name = string.Empty,
@@ -647,6 +740,7 @@ namespace Mes.Wpf.Modules.InspectionSchedules.ViewModels
                             {
                                 edit.Attachments.Add(new DefectAttachmentEditModel
                                 {
+                                    InspectionDefectAttachmentId = att.InspectionDefectAttachmentId,
                                     FileUri = att.FileUri,
                                     FileName = att.FileName ?? string.Empty,
                                     MimeType = att.MimeType ?? string.Empty,
@@ -949,11 +1043,85 @@ namespace Mes.Wpf.Modules.InspectionSchedules.ViewModels
                     FileName = result.Data.FileName,
                     MimeType = result.Data.MimeType ?? string.Empty,
                     Memo = string.Empty,
+                    LocalFilePath = dialog.FileName,
                 });
             }
             finally
             {
                 IsLoading = false;
+            }
+        }
+
+        private async Task OpenPhotoAsync(DefectAttachmentEditModel? attachment)
+        {
+            if (attachment == null)
+            {
+                return;
+            }
+
+            try
+            {
+                if (!string.IsNullOrWhiteSpace(attachment.LocalFilePath)
+                    && File.Exists(attachment.LocalFilePath))
+                {
+                    Process.Start(new ProcessStartInfo
+                    {
+                        FileName = attachment.LocalFilePath,
+                        UseShellExecute = true,
+                    });
+                    return;
+                }
+
+                if (!attachment.InspectionDefectAttachmentId.HasValue)
+                {
+                    _messageService.ShowWarning("저장된 이미지 정보가 없습니다.");
+                    return;
+                }
+
+                var extension = Path.GetExtension(attachment.FileName);
+                if (string.IsNullOrWhiteSpace(extension))
+                {
+                    extension = attachment.MimeType?.ToLowerInvariant() switch
+                    {
+                        "image/png" => ".png",
+                        "image/bmp" => ".bmp",
+                        "image/webp" => ".webp",
+                        _ => ".jpg",
+                    };
+                }
+
+                var tempDirectory = Path.Combine(Path.GetTempPath(), "MesWpf", "DefectImages");
+                Directory.CreateDirectory(tempDirectory);
+
+                var safeFileName = Path.GetFileName(attachment.FileName);
+                if (string.IsNullOrWhiteSpace(safeFileName))
+                {
+                    safeFileName = $"inspection_attachment_{attachment.InspectionDefectAttachmentId}{extension}";
+                }
+                else if (string.IsNullOrWhiteSpace(Path.GetExtension(safeFileName)))
+                {
+                    safeFileName += extension;
+                }
+
+                var tempPath = Path.Combine(tempDirectory, safeFileName);
+                var route = $"{ApiRoutes.InspectionSchedules}/result/attachments/{attachment.InspectionDefectAttachmentId}/content";
+                var download = await _apiClient.DownloadFileAsync(route, tempPath);
+
+                if (!download.Success)
+                {
+                    _messageService.ShowError(download.Message ?? "이미지 다운로드에 실패했습니다.");
+                    return;
+                }
+
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = tempPath,
+                    UseShellExecute = true,
+                });
+            }
+            catch (Exception ex)
+            {
+                _messageService.ShowError($"이미지 열기 중 오류가 발생했습니다.\n{ex.Message}");
             }
         }
 
@@ -1024,6 +1192,7 @@ namespace Mes.Wpf.Modules.InspectionSchedules.ViewModels
                     NextInspectionDate = IsPartial ? NextInspectionDate?.Date : null,
                     PartialReason = IsPartial ? PartialReason.Trim() : null,
                     Memo = string.IsNullOrWhiteSpace(Memo) ? null : Memo.Trim(),
+                    ExpectedUpdatedAt = _expectedUpdatedAt,
                 };
 
                 foreach (var defect in Defects)
@@ -1031,8 +1200,10 @@ namespace Mes.Wpf.Modules.InspectionSchedules.ViewModels
                     request.Defects.Add(new InspectionResultDefectRequest
                     {
                         DefectTypeId = defect.DefectTypeId ?? 0,
-                        DefectQty = 0,
-                        Disposition = "NOT_SHIPPABLE",
+                        DefectQty = defect.DefectQty,
+                        Disposition = string.IsNullOrWhiteSpace(defect.Disposition)
+                            ? "NOT_SHIPPABLE"
+                            : defect.Disposition,
                         Memo = string.IsNullOrWhiteSpace(defect.Memo) ? null : defect.Memo.Trim(),
                         Attachments = new ObservableCollection<DefectAttachmentRequest>(
                             defect.Attachments.Select(x => new DefectAttachmentRequest

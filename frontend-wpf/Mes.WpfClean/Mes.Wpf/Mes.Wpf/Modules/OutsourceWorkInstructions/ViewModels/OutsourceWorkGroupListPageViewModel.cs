@@ -37,30 +37,25 @@ namespace Mes.Wpf.Modules.OutsourceWorkInstructions.ViewModels
             _messageService = messageService;
 
             Items = new ObservableCollection<OutsourceWorkGroupListItemDto>();
-            EditRawMaterialAllocations = new ObservableCollection<OutsourceWorkInstructionRawMaterialAllocationEditModel>();
             ProcessTypeOptions = new ObservableCollection<string> { "전체", "재단", "인쇄" };
             StatusOptions = new ObservableCollection<string> { "전체", "등록", "업체입고", "작업완료", "출고완료", "취소" };
 
             SearchCommand = new AsyncRelayCommand(SearchAsync);
             ResetCommand = new RelayCommand(Reset);
             CancelCommand = new AsyncRelayCommand(CancelAsync);
-            OpenEditRawMaterialAllocationCommand = new RelayCommand(OpenEditRawMaterialAllocation);
             SaveUpdateCommand = new AsyncRelayCommand(SaveUpdateAsync);
             ReloadEditFormCommand = new RelayCommand(LoadEditFormFromSelectedDetail);
         }
 
         public ObservableCollection<OutsourceWorkGroupListItemDto> Items { get; }
-        public ObservableCollection<OutsourceWorkInstructionRawMaterialAllocationEditModel> EditRawMaterialAllocations { get; }
         public ObservableCollection<string> ProcessTypeOptions { get; }
         public ObservableCollection<string> StatusOptions { get; }
 
         public AsyncRelayCommand SearchCommand { get; }
         public RelayCommand ResetCommand { get; }
         public AsyncRelayCommand CancelCommand { get; }
-        public RelayCommand OpenEditRawMaterialAllocationCommand { get; }
         public AsyncRelayCommand SaveUpdateCommand { get; }
         public RelayCommand ReloadEditFormCommand { get; }
-        public event Action<OutsourceRawMaterialAllocationWindowViewModel>? RequestOpenRawMaterialAllocation;
 
         public bool IsLoading
         {
@@ -140,13 +135,7 @@ namespace Mes.Wpf.Modules.OutsourceWorkInstructions.ViewModels
         public decimal? EditLengthM
         {
             get => _editLengthM;
-            set
-            {
-                if (SetProperty(ref _editLengthM, value))
-                {
-                    OnPropertyChanged(nameof(EditRawMaterialAllocationSummary));
-                }
-            }
+            set => SetProperty(ref _editLengthM, value);
         }
 
         public int EditSheetCutCount
@@ -172,11 +161,6 @@ namespace Mes.Wpf.Modules.OutsourceWorkInstructions.ViewModels
             get => _updateReason;
             set => SetProperty(ref _updateReason, value);
         }
-
-        public decimal EditRawMaterialAllocationQty => EditRawMaterialAllocations.Sum(x => x.Qty);
-
-        public string EditRawMaterialAllocationSummary =>
-            $"{EditRawMaterialAllocations.Count:N0} LOT / {EditRawMaterialAllocationQty:N2}M";
 
         public async Task InitializeAsync()
         {
@@ -257,7 +241,6 @@ namespace Mes.Wpf.Modules.OutsourceWorkInstructions.ViewModels
 
             var confirmMessage =
                 "선택한 외주 작업지시를 취소합니다.\n" +
-                "원자재 배정은 CONSUME_REVERSE 수불로 복구되고, LOT는 작업지시 후보로 복귀합니다.\n\n" +
                 $"작업지시: {SelectedDetail.InstructionNo}\n" +
                 $"LOT: {SelectedDetail.LotNosText}";
 
@@ -295,8 +278,6 @@ namespace Mes.Wpf.Modules.OutsourceWorkInstructions.ViewModels
 
         private void LoadEditFormFromSelectedDetail()
         {
-            EditRawMaterialAllocations.Clear();
-
             if (SelectedDetail == null)
             {
                 EditSheetQty = 0;
@@ -305,7 +286,6 @@ namespace Mes.Wpf.Modules.OutsourceWorkInstructions.ViewModels
                 EditFabricLotNo = string.Empty;
                 EditMemo = string.Empty;
                 UpdateReason = string.Empty;
-                RefreshEditRawMaterialAllocationValues();
                 return;
             }
 
@@ -316,66 +296,6 @@ namespace Mes.Wpf.Modules.OutsourceWorkInstructions.ViewModels
             EditMemo = SelectedDetail.Memo ?? string.Empty;
             UpdateReason = string.Empty;
 
-            foreach (var allocation in SelectedDetail.RawMaterialAllocations.Where(x => x.Status == "CONSUMED"))
-            {
-                if (!allocation.RawMaterialInventoryLotId.HasValue)
-                {
-                    continue;
-                }
-
-                EditRawMaterialAllocations.Add(new OutsourceWorkInstructionRawMaterialAllocationEditModel
-                {
-                    RawMaterialInventoryLotId = allocation.RawMaterialInventoryLotId.Value,
-                    RawMaterialId = allocation.RawMaterialId,
-                    RawMaterialLocationId = allocation.RawMaterialLocationId,
-                    MaterialCode = allocation.MaterialCode ?? string.Empty,
-                    MaterialName = allocation.MaterialName ?? string.Empty,
-                    LocationName = allocation.LocationName ?? string.Empty,
-                    LotNo = allocation.LotNo,
-                    Qty = allocation.Qty
-                });
-            }
-
-            RefreshEditRawMaterialAllocationValues();
-        }
-
-        private void OpenEditRawMaterialAllocation()
-        {
-            if (!CanUpdateSelectedDetail)
-            {
-                _messageService.ShowWarning("등록 상태의 외주작업지시만 수정할 수 있습니다.");
-                return;
-            }
-
-            var requiredQty = EditLengthM ?? 0m;
-            var dialogViewModel = new OutsourceRawMaterialAllocationWindowViewModel(
-                _apiClient,
-                _messageService,
-                requiredQty,
-                EditRawMaterialAllocations,
-                _ => 0m,
-                currentAllocationsAreConsumed: true);
-
-            RequestOpenRawMaterialAllocation?.Invoke(dialogViewModel);
-        }
-
-        public void ApplyEditRawMaterialAllocationDialog(OutsourceRawMaterialAllocationWindowViewModel viewModel)
-        {
-            EditRawMaterialAllocations.Clear();
-
-            foreach (var allocation in viewModel.AppliedAllocations)
-            {
-                EditRawMaterialAllocations.Add(allocation);
-            }
-
-            EditFabricLotNo = string.Join(", ", EditRawMaterialAllocations.Select(x => x.LotNo).Distinct());
-            RefreshEditRawMaterialAllocationValues();
-        }
-
-        private void RefreshEditRawMaterialAllocationValues()
-        {
-            OnPropertyChanged(nameof(EditRawMaterialAllocationQty));
-            OnPropertyChanged(nameof(EditRawMaterialAllocationSummary));
         }
 
         private async Task SaveUpdateAsync()
@@ -398,15 +318,6 @@ namespace Mes.Wpf.Modules.OutsourceWorkInstructions.ViewModels
                 return;
             }
 
-            var requiredQty = EditLengthM ?? 0m;
-            var allocatedQty = EditRawMaterialAllocationQty;
-
-            if (requiredQty != allocatedQty)
-            {
-                _messageService.ShowWarning($"원자재 배정 합계가 사용M수와 일치해야 합니다.\n사용M수: {requiredQty:N2} / 배정: {allocatedQty:N2}");
-                return;
-            }
-
             if (string.IsNullOrWhiteSpace(UpdateReason))
             {
                 _messageService.ShowWarning("수정 사유를 입력하세요.");
@@ -414,7 +325,7 @@ namespace Mes.Wpf.Modules.OutsourceWorkInstructions.ViewModels
             }
 
             if (!_messageService.Confirm(
-                "외주작업지시를 수정하면 기존 원자재 차감 수불이 복원되고 새 배정으로 다시 차감됩니다.\n계속 진행하시겠습니까?",
+                "외주작업지시를 수정하시겠습니까?",
                 "외주작업지시 수정"))
             {
                 return;
@@ -431,10 +342,7 @@ namespace Mes.Wpf.Modules.OutsourceWorkInstructions.ViewModels
                     SheetCutCount = EditSheetCutCount,
                     FabricLotNo = string.IsNullOrWhiteSpace(EditFabricLotNo) ? null : EditFabricLotNo.Trim(),
                     Remark = string.IsNullOrWhiteSpace(EditMemo) ? null : EditMemo.Trim(),
-                    Reason = UpdateReason.Trim(),
-                    RawMaterialAllocations = EditRawMaterialAllocations
-                        .Select(x => x.ToRequest())
-                        .ToList()
+                    Reason = UpdateReason.Trim()
                 };
 
                 var result = await _apiClient.PutAsync<OutsourceWorkGroupUpdateRequest, OutsourceWorkGroupDetailDto>(

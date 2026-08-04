@@ -168,6 +168,7 @@ class LotTraceOutsourceWorkOut(BaseModel):
     shipped_at: Optional[datetime] = None
     remark: Optional[str] = None
     work_done_remark: Optional[str] = None
+    instruction_created_at: Optional[datetime] = None
 
 class LotTraceDefectAttachmentOut(BaseModel):
     inspection_defect_attachment_id: int
@@ -179,6 +180,10 @@ class LotTraceDefectAttachmentOut(BaseModel):
 
 class LotTraceInspectionDefectOut(BaseModel):
     inspection_defect_id: int
+    inspection_result_id: int
+    inspection_round: int
+    inspection_date: date
+    is_partial: bool
     defect_type_id: int
     defect_type_code: Optional[str] = None
     defect_type_name: Optional[str] = None
@@ -211,9 +216,44 @@ class LotTraceInspectionOut(BaseModel):
     defects: List[LotTraceInspectionDefectOut] = Field(default_factory=list)
 
 
+class LotTraceInspectionRoundOut(BaseModel):
+    inspection_round: int
+    inspection_schedule_id: int
+    inspection_result_id: Optional[int] = None
+    inspection_date: date
+    schedule_status: str
+    received_at: Optional[datetime] = None
+    started_at: Optional[datetime] = None
+    finished_at: Optional[datetime] = None
+    schedule_created_at: datetime
+    inspected_qty: Optional[int] = None
+    good_qty: Optional[int] = None
+    defect_qty: Optional[int] = None
+    defect_ship_qty: Optional[int] = None
+    is_partial: Optional[bool] = None
+    next_inspection_date: Optional[date] = None
+    partial_reason: Optional[str] = None
+    memo: Optional[str] = None
+    created_by: Optional[str] = None
+    result_created_at: Optional[datetime] = None
+
+
+class LotTraceTimelineItemOut(BaseModel):
+    event_type: str
+    event_at: datetime
+    title: str
+    summary: str
+    status: str
+    memo: Optional[str] = None
+    ref_type: Optional[str] = None
+    ref_id: Optional[int] = None
+
+
 class LotTraceDetailOut(BaseModel):
     progress: LotTraceProgressOut
     lot_basic: LotTraceBasicOut
     product_order: LotTraceProductOrderOut
     outsource_works: List[LotTraceOutsourceWorkOut] = Field(default_factory=list)
     inspection: Optional[LotTraceInspectionOut] = None
+    inspection_rounds: List[LotTraceInspectionRoundOut] = Field(default_factory=list)
+    timeline: List[LotTraceTimelineItemOut] = Field(default_factory=list)

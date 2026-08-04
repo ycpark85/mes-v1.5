@@ -21,7 +21,6 @@ from app.schemas.outsource_work_instruction import (
     OutsourceWorkInstructionGroupCreate,
     OutsourceWorkInstructionGroupItemCreate,
 )
-from app.services.outsource_work_group_service import consume_raw_material_allocations
 from app.services.production_daily_query import refresh_order_line_snapshots_for_lots
 from app.services.routing_policy import get_available_process_types
 
@@ -242,12 +241,6 @@ def _create_work_groups(
                 )
             )
 
-        consume_raw_material_allocations(
-            db=db,
-            work_group=work_group,
-            allocations=group_payload.raw_material_allocations,
-        )
-
     db.flush()
 
 
@@ -334,7 +327,6 @@ def _filter_groups_for_lot_ids(
                 representative_lot_id=representative_lot_id,
                 remark=group.remark,
                 items=filtered_items,
-                raw_material_allocations=group.raw_material_allocations,
             )
         )
 

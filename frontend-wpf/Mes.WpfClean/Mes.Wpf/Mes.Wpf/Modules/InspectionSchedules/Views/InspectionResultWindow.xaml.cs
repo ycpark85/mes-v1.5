@@ -1,4 +1,4 @@
-﻿using System.Windows;
+using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using Mes.Wpf.Modules.InspectionSchedules.Dtos;
@@ -8,6 +8,8 @@ namespace Mes.Wpf.Modules.InspectionSchedules.Views
 {
     public partial class InspectionResultWindow : Window
     {
+        private bool _wasChanged;
+
         public InspectionResultWindow()
         {
             InitializeComponent();
@@ -19,12 +21,48 @@ namespace Mes.Wpf.Modules.InspectionSchedules.Views
 
             DataContext = viewModel;
             viewModel.CloseRequested += OnCloseRequested;
+            viewModel.EditRequested += OnEditRequested;
         }
 
         private void OnCloseRequested(bool dialogResult)
         {
-            DialogResult = dialogResult;
+            DialogResult = dialogResult || _wasChanged;
             Close();
+        }
+
+        private async void OnEditRequested()
+        {
+            if (DataContext is not InspectionResultWindowViewModel detailVm)
+            {
+                return;
+            }
+
+            var editVm = new InspectionResultWindowViewModel(
+                detailVm.ApiClient,
+                detailVm.MessageService,
+                canEdit: true);
+
+            await editVm.InitializeAsync(
+                detailVm.InspectionScheduleId,
+                detailVm.LotNo,
+                detailVm.ProductName,
+                detailVm.PartnerName,
+                detailVm.InspectionDate,
+                detailVm.PlanQty,
+                detailVm.DueDate,
+                detailVm.OrderQty);
+
+            var editWindow = new InspectionResultWindow(editVm)
+            {
+                Owner = this,
+                Title = "검수실적 수정"
+            };
+
+            if (editWindow.ShowDialog() == true)
+            {
+                _wasChanged = true;
+                await detailVm.RefreshAsync();
+            }
         }
 
         private void DefectTypeIdTextBox_KeyDown(object sender, KeyEventArgs e)

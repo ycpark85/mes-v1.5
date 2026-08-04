@@ -43,13 +43,6 @@
         public const string Inventories = "api/v1/inventories";
         public const string InventoryMovements = "api/v1/inventories/movements";
         public const string InventoryConsistency = "api/v1/inventories/consistency";
-        public const string RawMaterials = "api/v1/raw-materials";
-        public const string RawMaterialLocations = "api/v1/raw-materials/locations";
-        public const string RawMaterialInventoryLots = "api/v1/raw-materials/inventory-lots";
-        public const string RawMaterialMovements = "api/v1/raw-materials/movements";
-        public const string RawMaterialInbound = "api/v1/raw-materials/inbound";
-        public const string RawMaterialTransfer = "api/v1/raw-materials/transfer";
-        public const string RawMaterialAdjust = "api/v1/raw-materials/adjust";
         public const string Shipments = "api/v1/shipments";
         public const string InitialInventoryBulk = "api/v1/inventories/initial-bulk";
 

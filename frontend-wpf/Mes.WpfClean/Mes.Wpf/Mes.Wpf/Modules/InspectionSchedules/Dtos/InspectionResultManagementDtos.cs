@@ -59,6 +59,30 @@ namespace Mes.Wpf.Modules.InspectionSchedules.Dtos
         [JsonPropertyName("inspection_date")]
         public DateTime InspectionDate { get; set; }
 
+        [JsonPropertyName("schedule_status")]
+        public string ScheduleStatus { get; set; } = string.Empty;
+
+        [JsonPropertyName("inspection_round")]
+        public int InspectionRound { get; set; }
+
+        [JsonPropertyName("inspection_round_count")]
+        public int InspectionRoundCount { get; set; }
+
+        [JsonPropertyName("is_partial")]
+        public bool IsPartial { get; set; }
+
+        [JsonPropertyName("next_inspection_date")]
+        public DateTime? NextInspectionDate { get; set; }
+
+        [JsonPropertyName("partial_reason")]
+        public string? PartialReason { get; set; }
+
+        [JsonIgnore]
+        public string InspectionRoundDisplay => $"{InspectionRound}차";
+
+        [JsonIgnore]
+        public string ResultTypeDisplay => IsPartial ? "분할" : "최종";
+
         [JsonPropertyName("due_date")]
         public DateTime DueDate { get; set; }
 

@@ -98,9 +98,60 @@ class LotTraceQueryTests(unittest.TestCase):
         self.assertEqual(15, inspection.good_qty)
         self.assertEqual(3, inspection.defect_ship_qty)
         self.assertEqual(3, inspection.defect_qty)
-        self.assertEqual(1, len(inspection.defects))
-        self.assertEqual("Print / Blur", inspection.defects[0].defect_type_name)
-        self.assertEqual("/attachments/1", inspection.defects[0].attachments[0].image_url)
+        self.assertEqual(2, len(inspection.defects))
+        partial_defect = next(
+            defect for defect in inspection.defects if defect.inspection_round == 1
+        )
+        final_defect = next(
+            defect for defect in inspection.defects if defect.inspection_round == 2
+        )
+        self.assertTrue(partial_defect.is_partial)
+        self.assertEqual(date(2026, 7, 9), partial_defect.inspection_date)
+        self.assertEqual(2, partial_defect.defect_qty)
+        self.assertFalse(final_defect.is_partial)
+        self.assertEqual("Print / Blur", final_defect.defect_type_name)
+        self.assertEqual("/attachments/1", final_defect.attachments[0].image_url)
+        self.assertEqual(2, len(result.inspection_rounds))
+        self.assertTrue(result.inspection_rounds[0].is_partial)
+        self.assertFalse(result.inspection_rounds[1].is_partial)
+
+        event_types = [item.event_type for item in result.timeline]
+        self.assertIn("LOT_CREATED", event_types)
+        self.assertIn("OUTSOURCE_INSTRUCTION_CREATED", event_types)
+        self.assertIn("OUTSOURCE_VENDOR_RECEIVED", event_types)
+        self.assertIn("OUTSOURCE_WORK_DONE", event_types)
+        self.assertIn("INSPECTION_PARTIAL_DONE", event_types)
+        self.assertIn("INSPECTION_FINAL_DONE", event_types)
+        self.assertEqual("LOT_DONE", event_types[-1])
+
+    def test_rework_lot_timeline_includes_parent_and_reason(self) -> None:
+        self._seed_full_trace()
+        self.db.add(
+            Lot(
+                lot_id=2,
+                lot_no="LOT-A-R01",
+                order_line_id=1,
+                product_id=1,
+                parent_lot_id=1,
+                lot_qty=10,
+                uom="EA",
+                created_date=date(2026, 7, 11),
+                created_at=datetime(2026, 7, 11, 9, 0, 0),
+                due_date=date(2026, 7, 20),
+                status="WAITING",
+                memo="표면 주름 재작업",
+            )
+        )
+        self.db.commit()
+
+        result = get_lot_trace_detail_for_lot(self.db, 2)
+
+        created = next(
+            item for item in result.timeline if item.event_type == "LOT_CREATED"
+        )
+        self.assertEqual("재작업 LOT 생성", created.title)
+        self.assertIn("부모 LOT-A", created.summary)
+        self.assertEqual("표면 주름 재작업", created.memo)
 
     def test_lot_trace_detail_rejects_missing_lot(self) -> None:
         with self.assertRaises(HTTPException) as ctx:
@@ -191,6 +242,8 @@ class LotTraceQueryTests(unittest.TestCase):
                     created_date=date(2026, 7, 1),
                     due_date=date(2026, 7, 20),
                     status="DONE",
+                    created_at=datetime(2026, 7, 1, 10, 0, 0),
+                    updated_at=datetime(2026, 7, 10, 16, 0, 0),
                 ),
                 ProductInventory(
                     product_inventory_id=1,
@@ -204,6 +257,7 @@ class LotTraceQueryTests(unittest.TestCase):
                     process_type="CUT",
                     partner_id=2,
                     is_bundle=False,
+                    created_at=datetime(2026, 7, 2, 8, 0, 0),
                 ),
                 OutsourceWorkGroup(
                     outsource_work_group_id=1,
@@ -216,6 +270,8 @@ class LotTraceQueryTests(unittest.TestCase):
                     status="WORK_DONE",
                     work_done_sheet_qty=4,
                     remark="work memo",
+                    vendor_received_at=datetime(2026, 7, 3, 8, 30, 0),
+                    work_done_at=datetime(2026, 7, 4, 16, 0, 0),
                 ),
                 OutsourceWorkGroupItem(
                     outsource_work_group_item_id=1,
@@ -230,6 +286,8 @@ class LotTraceQueryTests(unittest.TestCase):
                     inspection_date=date(2026, 7, 9),
                     status="PARTIAL_DONE",
                     day_seq=1,
+                    created_at=datetime(2026, 7, 9, 8, 0, 0),
+                    finished_at=datetime(2026, 7, 9, 15, 0, 0),
                 ),
                 InspectionSchedule(
                     inspection_schedule_id=2,
@@ -237,6 +295,8 @@ class LotTraceQueryTests(unittest.TestCase):
                     inspection_date=date(2026, 7, 10),
                     status="DONE",
                     day_seq=1,
+                    created_at=datetime(2026, 7, 10, 8, 0, 0),
+                    finished_at=datetime(2026, 7, 10, 15, 0, 0),
                 ),
                 InspectionResult(
                     inspection_result_id=1,
@@ -251,6 +311,7 @@ class LotTraceQueryTests(unittest.TestCase):
                     next_inspection_date=date(2026, 7, 10),
                     partial_reason="partial",
                     created_by="tester",
+                    created_at=datetime(2026, 7, 9, 15, 0, 0),
                 ),
                 InspectionResult(
                     inspection_result_id=2,
@@ -264,6 +325,7 @@ class LotTraceQueryTests(unittest.TestCase):
                     is_partial=False,
                     memo="done",
                     created_by="tester",
+                    created_at=datetime(2026, 7, 10, 15, 0, 0),
                 ),
                 DefectType(
                     defect_type_id=1,
@@ -279,6 +341,14 @@ class LotTraceQueryTests(unittest.TestCase):
                     defect_qty=1,
                     disposition="NOT_SHIPPABLE",
                     memo="defect memo",
+                ),
+                InspectionDefect(
+                    inspection_defect_id=2,
+                    inspection_result_id=1,
+                    defect_type_id=1,
+                    defect_qty=2,
+                    disposition="NOT_SHIPPABLE",
+                    memo="partial defect memo",
                 ),
                 InspectionDefectAttachment(
                     inspection_defect_attachment_id=1,

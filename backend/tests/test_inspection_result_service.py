@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import unittest
-from datetime import date
+from datetime import date, datetime, timezone
 from unittest.mock import patch
 
 from fastapi import HTTPException
@@ -23,7 +23,8 @@ from app.models.product_inventory_lot import ProductInventoryLot
 from app.models.product_inventory_movement import ProductInventoryMovement
 from app.models.routing_template import RoutingTemplate
 from app.models.shipment_line import ShipmentLine
-from app.services.inspection_result_service import upsert_inspection_result
+from app.core.time import KOREA_TIME_ZONE
+from app.services.inspection_result_service import _timestamps_match, upsert_inspection_result
 
 
 @compiles(BigInteger, "sqlite")
@@ -51,6 +52,37 @@ TEST_TABLE_NAMES = [
 
 
 class InspectionResultServiceTests(unittest.TestCase):
+    def test_concurrency_timestamp_matches_same_instant_across_client_formats(self) -> None:
+        stored = datetime(
+            2026,
+            7,
+            14,
+            14,
+            49,
+            48,
+            556403,
+            tzinfo=KOREA_TIME_ZONE,
+        )
+
+        self.assertTrue(
+            _timestamps_match(
+                stored,
+                datetime(2026, 7, 14, 14, 49, 48, 556403),
+            )
+        )
+        self.assertTrue(
+            _timestamps_match(
+                stored,
+                datetime(2026, 7, 14, 5, 49, 48, 556403, tzinfo=timezone.utc),
+            )
+        )
+        self.assertFalse(
+            _timestamps_match(
+                stored,
+                datetime(2026, 7, 14, 5, 49, 49, 556403, tzinfo=timezone.utc),
+            )
+        )
+
     def setUp(self) -> None:
         self.engine = create_engine("sqlite:///:memory:")
         tables = [Base.metadata.tables[name] for name in TEST_TABLE_NAMES]
@@ -106,6 +138,90 @@ class InspectionResultServiceTests(unittest.TestCase):
         self.assertEqual(0, result.uninspected_qty)
         self.assertEqual(0, len(movements))
         self.assertEqual(0, len(shipments))
+
+    def test_partial_result_requires_non_blank_reason(self) -> None:
+        with self.assertRaises(HTTPException) as raised:
+            upsert_inspection_result(
+                self.db,
+                1,
+                good_qty=10,
+                defect_ship_qty=0,
+                defect_qty=0,
+                uninspected_qty=0,
+                stock_ship_qty=0,
+                result_ship_qty=0,
+                stock_in_qty=0,
+                discard_qty=0,
+                is_partial=True,
+                next_inspection_date=date(2026, 7, 11),
+                partial_reason="   ",
+                memo=None,
+                defects=[],
+                actor="tester",
+            )
+
+        self.assertEqual(422, raised.exception.status_code)
+        self.assertEqual(
+            "partial_reason is required when is_partial=true",
+            raised.exception.detail,
+        )
+
+    def test_final_result_after_partial_completes_lot_and_order_line(self) -> None:
+        self._add_stock_for_done_settlement()
+
+        _, _, created_next_id = upsert_inspection_result(
+            self.db,
+            1,
+            good_qty=10,
+            defect_ship_qty=2,
+            defect_qty=1,
+            uninspected_qty=0,
+            stock_ship_qty=0,
+            result_ship_qty=0,
+            stock_in_qty=0,
+            discard_qty=0,
+            is_partial=True,
+            next_inspection_date=date(2026, 7, 11),
+            partial_reason="remaining quantity",
+            memo="first partial",
+            defects=[],
+            actor="tester",
+        )
+
+        next_schedule = self.db.get(InspectionSchedule, created_next_id)
+        next_schedule.status = "IN_PROGRESS"
+        self.db.flush()
+
+        _, schedule_status, _ = upsert_inspection_result(
+            self.db,
+            created_next_id,
+            good_qty=40,
+            defect_ship_qty=10,
+            defect_qty=4,
+            uninspected_qty=1,
+            stock_ship_qty=6,
+            result_ship_qty=20,
+            stock_in_qty=39,
+            discard_qty=3,
+            is_partial=False,
+            next_inspection_date=None,
+            partial_reason=None,
+            memo="final",
+            defects=[],
+            actor="tester",
+        )
+        self.db.commit()
+
+        lot = self.db.get(Lot, 1)
+        order_line = self.db.get(OrderLine, 1)
+        first_schedule = self.db.get(InspectionSchedule, 1)
+        next_schedule = self.db.get(InspectionSchedule, created_next_id)
+
+        self.assertEqual("DONE", schedule_status)
+        self.assertEqual("PARTIAL_DONE", first_schedule.status)
+        self.assertEqual("DONE", next_schedule.status)
+        self.assertEqual("DONE", lot.status)
+        self.assertEqual("DONE", order_line.status)
 
     def test_done_result_applies_inventory_in_stock_ship_and_result_ship(self) -> None:
         self._add_stock_for_done_settlement()
@@ -191,6 +307,51 @@ class InspectionResultServiceTests(unittest.TestCase):
         result = self.db.execute(select(InspectionResult)).scalar_one_or_none()
         self.assertEqual(422, ctx.exception.status_code)
         self.assertIsNone(result)
+
+    def test_done_result_update_rejects_stale_updated_at(self) -> None:
+        self._add_stock_for_done_settlement()
+        upsert_inspection_result(
+            self.db,
+            1,
+            good_qty=40,
+            defect_ship_qty=10,
+            defect_qty=4,
+            uninspected_qty=1,
+            stock_ship_qty=6,
+            result_ship_qty=20,
+            stock_in_qty=27,
+            discard_qty=3,
+            is_partial=False,
+            next_inspection_date=None,
+            partial_reason=None,
+            memo="done",
+            defects=[],
+            actor="tester",
+        )
+        self.db.commit()
+
+        with self.assertRaises(HTTPException) as ctx:
+            upsert_inspection_result(
+                self.db,
+                1,
+                good_qty=40,
+                defect_ship_qty=10,
+                defect_qty=4,
+                uninspected_qty=1,
+                stock_ship_qty=6,
+                result_ship_qty=20,
+                stock_in_qty=27,
+                discard_qty=3,
+                is_partial=False,
+                next_inspection_date=None,
+                partial_reason=None,
+                memo="stale update",
+                defects=[],
+                actor="tester",
+                expected_updated_at=datetime(2000, 1, 1),
+            )
+
+        self.assertEqual(409, ctx.exception.status_code)
 
     def _seed_base_data(self) -> None:
         self.db.add_all(

@@ -273,20 +273,6 @@ PERMISSION_SEEDS = [
         "sort_order": 7000,
     },
     {
-        "permission_code": "RAW_MATERIALS.VIEW",
-        "menu_code": "RAW_MATERIALS",
-        "action_code": "VIEW",
-        "permission_name": "원자재 기준정보 조회",
-        "sort_order": 7100,
-    },
-    {
-        "permission_code": "RAW_MATERIAL_INVENTORIES.VIEW",
-        "menu_code": "RAW_MATERIAL_INVENTORIES",
-        "action_code": "VIEW",
-        "permission_name": "원자재 재고 조회",
-        "sort_order": 7110,
-    },
-    {
         "permission_code": "SHIPMENTS.VIEW",
         "menu_code": "SHIPMENTS",
         "action_code": "VIEW",
@@ -377,20 +363,6 @@ PERMISSION_SEEDS = [
         "action_code": "WRITE",
         "permission_name": "재고 관리 저장",
         "sort_order": 7001,
-    },
-    {
-        "permission_code": "RAW_MATERIALS.WRITE",
-        "menu_code": "RAW_MATERIALS",
-        "action_code": "WRITE",
-        "permission_name": "원자재 기준정보 저장",
-        "sort_order": 7101,
-    },
-    {
-        "permission_code": "RAW_MATERIAL_INVENTORIES.WRITE",
-        "menu_code": "RAW_MATERIAL_INVENTORIES",
-        "action_code": "WRITE",
-        "permission_name": "원자재 재고 저장",
-        "sort_order": 7111,
     },
     {
         "permission_code": "SHIPMENTS.WRITE",

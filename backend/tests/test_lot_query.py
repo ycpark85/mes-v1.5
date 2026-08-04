@@ -212,6 +212,7 @@ class LotQueryTests(unittest.TestCase):
                     order_line_id=1,
                     product_id=1,
                     parent_lot_id=1,
+                    memo="test rework reason",
                     lot_qty=3,
                     uom="EA",
                     created_date=date(2026, 7, 11),

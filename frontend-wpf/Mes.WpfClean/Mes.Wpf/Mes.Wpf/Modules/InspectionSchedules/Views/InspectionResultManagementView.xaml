@@ -179,6 +179,8 @@
                 <DataGrid.Columns>
                     <DataGridTextColumn Header="순번" Width="58" Binding="{Binding RowNo}" ElementStyle="{StaticResource CellTextStyle}"/>
                     <DataGridTextColumn Header="검수일자" Width="96" Binding="{Binding InspectionDate, StringFormat=yyyy-MM-dd}" ElementStyle="{StaticResource CellTextStyle}"/>
+                    <DataGridTextColumn Header="검수회차" Width="76" Binding="{Binding InspectionRoundDisplay}" ElementStyle="{StaticResource CellTextStyle}"/>
+                    <DataGridTextColumn Header="실적구분" Width="82" Binding="{Binding ResultTypeDisplay}" ElementStyle="{StaticResource CellTextStyle}"/>
                     <DataGridTextColumn Header="LOT" Width="112" Binding="{Binding LotNo}" ElementStyle="{StaticResource CellTextStyle}"/>
                     <DataGridTextColumn Header="고객사" Width="170" Binding="{Binding PartnerName}" ElementStyle="{StaticResource CellTextStyle}"/>
                     <DataGridTextColumn Header="품목명" Width="230" Binding="{Binding ProductName}" ElementStyle="{StaticResource CellTextStyle}"/>
@@ -211,6 +213,8 @@
 
                     <DataGridTextColumn Header="재고편입수량" Width="104" Binding="{Binding StockInQty, StringFormat={}{0:N0}}" ElementStyle="{StaticResource CellTextStyle}"/>
                     <DataGridTextColumn Header="불량수량" Width="90" Binding="{Binding DefectQty, StringFormat={}{0:N0}}" ElementStyle="{StaticResource CellTextStyle}"/>
+                    <DataGridTextColumn Header="다음 검수일" Width="100" Binding="{Binding NextInspectionDate, StringFormat=yyyy-MM-dd}" ElementStyle="{StaticResource CellTextStyle}"/>
+                    <DataGridTextColumn Header="분할사유" Width="180" Binding="{Binding PartialReason}" ElementStyle="{StaticResource CellTextStyle}"/>
                     <DataGridTextColumn Header="등록자" Width="90" Binding="{Binding CreatedBy}" ElementStyle="{StaticResource CellTextStyle}"/>
                     <DataGridTextColumn Header="등록일" Width="138" Binding="{Binding CreatedAt, StringFormat=yyyy-MM-dd HH:mm}" ElementStyle="{StaticResource CellTextStyle}"/>
                 </DataGrid.Columns>

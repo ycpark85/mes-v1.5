@@ -12,17 +12,10 @@ from app.models.inspection_schedule import InspectionSchedule
 from app.models.outsource_work_group import OutsourceWorkGroup
 from app.models.outsource_work_group_change_log import OutsourceWorkGroupChangeLog
 from app.models.outsource_work_group_item import OutsourceWorkGroupItem
-from app.models.outsource_work_group_raw_material_allocation import (
-    OutsourceWorkGroupRawMaterialAllocation,
-)
 from app.models.outsource_work_instruction_item import OutsourceWorkInstructionItem
-from app.models.raw_material_inventory import RawMaterialInventory
-from app.models.raw_material_inventory_lot import RawMaterialInventoryLot
-from app.models.raw_material_inventory_movement import RawMaterialInventoryMovement
 from app.schemas.outsource_work_instruction import (
     OutsourceWorkGroupCancelIn,
     OutsourceWorkGroupUpdateIn,
-    OutsourceWorkInstructionRawMaterialAllocationCreate,
 )
 from app.services.outsource_work_instruction_query import (
     OUTSOURCE_WORK_GROUP_STATUS_CANCELED,
@@ -48,24 +41,8 @@ def update_work_group(
         raise HTTPException(status_code=422, detail="Update reason is required")
 
     required_qty = _q2(payload.length_m)
-    allocated_qty = _q2(
-        sum((allocation.qty for allocation in payload.raw_material_allocations), Decimal("0"))
-    )
-
-    if required_qty != allocated_qty:
-        raise HTTPException(
-            status_code=409,
-            detail="Raw material allocation total must match length_m",
-        )
 
     before_data = _build_work_group_change_snapshot(db, work_group)
-
-    reverse_raw_material_allocations(
-        db,
-        work_group,
-        reason,
-        source_type="OUTSOURCE_WORK_GROUP_UPDATE",
-    )
 
     work_group.sheet_qty = payload.sheet_qty
     work_group.length_m = required_qty
@@ -93,12 +70,6 @@ def update_work_group(
     for group_item in group_items:
         group_item.cuts_per_sheet = payload.sheet_cut_count
         group_item.expected_output_qty = payload.sheet_qty * payload.sheet_cut_count
-
-    consume_raw_material_allocations(
-        db=db,
-        work_group=work_group,
-        allocations=payload.raw_material_allocations,
-    )
 
     after_data = _build_work_group_change_snapshot(db, work_group)
     db.add(
@@ -131,7 +102,6 @@ def cancel_work_group(
     if not reason:
         raise HTTPException(status_code=422, detail="Cancel reason is required")
 
-    reverse_raw_material_allocations(db, work_group, reason)
     _cancel_linked_inspection_schedules(db, work_group)
 
     work_group.status = OUTSOURCE_WORK_GROUP_STATUS_CANCELED
@@ -195,155 +165,6 @@ def _cancel_linked_inspection_schedules(
         schedule.status = "CANCELED"
 
 
-def consume_raw_material_allocations(
-    db: Session,
-    work_group: OutsourceWorkGroup,
-    allocations: list[OutsourceWorkInstructionRawMaterialAllocationCreate],
-) -> None:
-    if not allocations:
-        return
-
-    for allocation_payload in allocations:
-        qty = _q2(allocation_payload.qty)
-
-        if qty <= 0:
-            raise HTTPException(
-                status_code=422,
-                detail="Raw material allocation qty must be greater than 0",
-            )
-
-        inventory_lot = (
-            db.execute(
-                select(RawMaterialInventoryLot)
-                .where(
-                    RawMaterialInventoryLot.raw_material_inventory_lot_id
-                    == allocation_payload.raw_material_inventory_lot_id
-                )
-                .with_for_update()
-            )
-            .scalar_one_or_none()
-        )
-
-        if inventory_lot is None:
-            raise HTTPException(status_code=404, detail="Raw material inventory lot not found")
-
-        inventory = (
-            db.execute(
-                select(RawMaterialInventory)
-                .where(
-                    RawMaterialInventory.raw_material_id == inventory_lot.raw_material_id,
-                    RawMaterialInventory.raw_material_location_id
-                    == inventory_lot.raw_material_location_id,
-                )
-                .with_for_update()
-            )
-            .scalar_one_or_none()
-        )
-
-        if inventory is None:
-            raise HTTPException(
-                status_code=409,
-                detail="Raw material location inventory not found",
-            )
-
-        if inventory_lot.current_qty < qty or inventory.current_qty < qty:
-            raise HTTPException(status_code=409, detail="Raw material inventory is insufficient")
-
-        amount_snapshot = _amount(qty, inventory_lot.unit_cost)
-        memo = (
-            allocation_payload.memo.strip()
-            if allocation_payload.memo and allocation_payload.memo.strip()
-            else None
-        )
-        allocation = OutsourceWorkGroupRawMaterialAllocation(
-            outsource_work_group_id=work_group.outsource_work_group_id,
-            raw_material_id=inventory_lot.raw_material_id,
-            raw_material_location_id=inventory_lot.raw_material_location_id,
-            raw_material_inventory_lot_id=inventory_lot.raw_material_inventory_lot_id,
-            lot_no=inventory_lot.lot_no,
-            qty=qty,
-            unit_cost_snapshot=inventory_lot.unit_cost,
-            amount_snapshot=amount_snapshot,
-            status="CONSUMED",
-            memo=memo,
-        )
-        db.add(allocation)
-        db.flush()
-
-        inventory_lot.current_qty = _q2(inventory_lot.current_qty - qty)
-        inventory.current_qty = _q2(inventory.current_qty - qty)
-
-        movement = RawMaterialInventoryMovement(
-            raw_material_id=inventory_lot.raw_material_id,
-            raw_material_location_id=inventory_lot.raw_material_location_id,
-            raw_material_inventory_lot_id=inventory_lot.raw_material_inventory_lot_id,
-            lot_no=inventory_lot.lot_no,
-            movement_type="CONSUME_OUT",
-            qty=-qty,
-            balance_after=inventory.current_qty,
-            unit_cost_snapshot=inventory_lot.unit_cost,
-            amount_snapshot=amount_snapshot,
-            source_type="OUTSOURCE_WORK_GROUP_RAW_MATERIAL_ALLOCATION",
-            source_id=allocation.outsource_work_group_raw_material_allocation_id,
-            memo=memo,
-        )
-        db.add(movement)
-        db.flush()
-
-        allocation.raw_material_inventory_movement_id = movement.raw_material_inventory_movement_id
-
-
-def reverse_raw_material_allocations(
-    db: Session,
-    work_group: OutsourceWorkGroup,
-    reason: str | None,
-    source_type: str = "OUTSOURCE_WORK_GROUP_CANCEL",
-) -> None:
-    allocations = (
-        db.execute(
-            select(OutsourceWorkGroupRawMaterialAllocation)
-            .where(
-                OutsourceWorkGroupRawMaterialAllocation.outsource_work_group_id
-                == work_group.outsource_work_group_id,
-                OutsourceWorkGroupRawMaterialAllocation.status == "CONSUMED",
-            )
-            .with_for_update()
-        )
-        .scalars()
-        .all()
-    )
-
-    for allocation in allocations:
-        qty = _q2(allocation.qty)
-        inventory = _get_or_create_raw_material_inventory_for_reverse(
-            db,
-            raw_material_id=allocation.raw_material_id,
-            raw_material_location_id=allocation.raw_material_location_id,
-        )
-        inventory_lot = _get_or_create_raw_material_lot_for_reverse(db, allocation)
-
-        inventory.current_qty = _q2(inventory.current_qty + qty)
-        inventory_lot.current_qty = _q2(inventory_lot.current_qty + qty)
-
-        movement = RawMaterialInventoryMovement(
-            raw_material_id=allocation.raw_material_id,
-            raw_material_location_id=allocation.raw_material_location_id,
-            raw_material_inventory_lot_id=inventory_lot.raw_material_inventory_lot_id,
-            lot_no=allocation.lot_no,
-            movement_type="CONSUME_REVERSE",
-            qty=qty,
-            balance_after=inventory.current_qty,
-            unit_cost_snapshot=allocation.unit_cost_snapshot,
-            amount_snapshot=allocation.amount_snapshot,
-            source_type=source_type,
-            source_id=allocation.outsource_work_group_raw_material_allocation_id,
-            memo=reason,
-        )
-        db.add(movement)
-        allocation.status = "REVERSED"
-        db.flush()
-
-
 def _get_work_group_for_update(
     db: Session,
     outsource_work_group_id: int,
@@ -363,85 +184,6 @@ def _get_work_group_for_update(
     return work_group
 
 
-def _get_or_create_raw_material_inventory_for_reverse(
-    db: Session,
-    raw_material_id: int,
-    raw_material_location_id: int,
-) -> RawMaterialInventory:
-    inventory = (
-        db.execute(
-            select(RawMaterialInventory)
-            .where(
-                RawMaterialInventory.raw_material_id == raw_material_id,
-                RawMaterialInventory.raw_material_location_id == raw_material_location_id,
-            )
-            .with_for_update()
-        )
-        .scalar_one_or_none()
-    )
-
-    if inventory is not None:
-        return inventory
-
-    inventory = RawMaterialInventory(
-        raw_material_id=raw_material_id,
-        raw_material_location_id=raw_material_location_id,
-        current_qty=Decimal("0"),
-    )
-    db.add(inventory)
-    db.flush()
-    return inventory
-
-
-def _get_or_create_raw_material_lot_for_reverse(
-    db: Session,
-    allocation: OutsourceWorkGroupRawMaterialAllocation,
-) -> RawMaterialInventoryLot:
-    inventory_lot: RawMaterialInventoryLot | None = None
-
-    if allocation.raw_material_inventory_lot_id is not None:
-        inventory_lot = (
-            db.execute(
-                select(RawMaterialInventoryLot)
-                .where(
-                    RawMaterialInventoryLot.raw_material_inventory_lot_id
-                    == allocation.raw_material_inventory_lot_id
-                )
-                .with_for_update()
-            )
-            .scalar_one_or_none()
-        )
-
-    if inventory_lot is None:
-        inventory_lot = (
-            db.execute(
-                select(RawMaterialInventoryLot)
-                .where(
-                    RawMaterialInventoryLot.raw_material_id == allocation.raw_material_id,
-                    RawMaterialInventoryLot.raw_material_location_id
-                    == allocation.raw_material_location_id,
-                    RawMaterialInventoryLot.lot_no == allocation.lot_no,
-                )
-                .with_for_update()
-            )
-            .scalar_one_or_none()
-        )
-
-    if inventory_lot is not None:
-        return inventory_lot
-
-    inventory_lot = RawMaterialInventoryLot(
-        raw_material_id=allocation.raw_material_id,
-        raw_material_location_id=allocation.raw_material_location_id,
-        lot_no=allocation.lot_no,
-        current_qty=Decimal("0"),
-        unit_cost=allocation.unit_cost_snapshot,
-    )
-    db.add(inventory_lot)
-    db.flush()
-    return inventory_lot
-
-
 def _build_work_group_change_snapshot(
     db: Session,
     work_group: OutsourceWorkGroup,
@@ -458,22 +200,6 @@ def _build_work_group_change_snapshot(
         .scalars()
         .all()
     )
-    allocations = (
-        db.execute(
-            select(OutsourceWorkGroupRawMaterialAllocation)
-            .where(
-                OutsourceWorkGroupRawMaterialAllocation.outsource_work_group_id
-                == work_group.outsource_work_group_id,
-                OutsourceWorkGroupRawMaterialAllocation.status == "CONSUMED",
-            )
-            .order_by(
-                OutsourceWorkGroupRawMaterialAllocation.outsource_work_group_raw_material_allocation_id.asc()
-            )
-        )
-        .scalars()
-        .all()
-    )
-
     return {
         "outsource_work_group_id": work_group.outsource_work_group_id,
         "sheet_qty": work_group.sheet_qty,
@@ -490,18 +216,6 @@ def _build_work_group_change_snapshot(
             }
             for item in group_items
         ],
-        "raw_material_allocations": [
-            {
-                "outsource_work_group_raw_material_allocation_id": allocation.outsource_work_group_raw_material_allocation_id,
-                "raw_material_inventory_lot_id": allocation.raw_material_inventory_lot_id,
-                "lot_no": allocation.lot_no,
-                "qty": _json_value(allocation.qty),
-                "unit_cost_snapshot": _json_value(allocation.unit_cost_snapshot),
-                "amount_snapshot": _json_value(allocation.amount_snapshot),
-                "status": allocation.status,
-            }
-            for allocation in allocations
-        ],
     }
 
 
@@ -515,10 +229,3 @@ def _json_value(value):
 
 def _q2(value: Decimal | int | float | str | None) -> Decimal:
     return Decimal(value or 0).quantize(Decimal("0.01"))
-
-
-def _amount(qty: Decimal, unit_cost: Decimal | None) -> Decimal | None:
-    if unit_cost is None:
-        return None
-
-    return (qty * unit_cost).quantize(Decimal("0.01"))

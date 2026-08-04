@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.ObjectModel;
 using System.Text.Json.Serialization;
 using Mes.Wpf.Core.Common;
@@ -9,6 +9,18 @@ namespace Mes.Wpf.Modules.InspectionSchedules.Dtos
     {
         [JsonPropertyName("result")]
         public InspectionResultDto? Result { get; set; }
+
+        [JsonPropertyName("schedule_status")]
+        public string? ScheduleStatus { get; set; }
+
+        [JsonPropertyName("inspection_round")]
+        public int InspectionRound { get; set; }
+
+        [JsonPropertyName("inspection_round_count")]
+        public int InspectionRoundCount { get; set; }
+
+        [JsonPropertyName("rounds")]
+        public ObservableCollection<InspectionRoundSummaryDto> Rounds { get; set; } = new();
 
         [JsonPropertyName("accumulated")]
         public InspectionAccumulatedSummaryDto? Accumulated { get; set; }
@@ -115,6 +127,9 @@ namespace Mes.Wpf.Modules.InspectionSchedules.Dtos
         [JsonPropertyName("memo")]
         public string? Memo { get; set; }
 
+        [JsonPropertyName("updated_at")]
+        public DateTimeOffset UpdatedAt { get; set; }
+
         [JsonPropertyName("defects")]
         public ObservableCollection<InspectionResultDefectDto> Defects { get; set; } = new();
     }
@@ -126,6 +141,9 @@ namespace Mes.Wpf.Modules.InspectionSchedules.Dtos
 
         [JsonPropertyName("defect_type_id")]
         public int DefectTypeId { get; set; }
+
+        [JsonPropertyName("defect_qty")]
+        public int DefectQty { get; set; }
 
         [JsonPropertyName("disposition")]
         public string? Disposition { get; set; }
@@ -211,6 +229,9 @@ namespace Mes.Wpf.Modules.InspectionSchedules.Dtos
         [JsonPropertyName("memo")]
         public string? Memo { get; set; }
 
+        [JsonPropertyName("expected_updated_at")]
+        public DateTimeOffset? ExpectedUpdatedAt { get; set; }
+
         [JsonPropertyName("defects")]
         public ObservableCollection<InspectionResultDefectRequest> Defects { get; set; } = new();
     }
@@ -260,6 +281,8 @@ namespace Mes.Wpf.Modules.InspectionSchedules.Dtos
     public class InspectionResultDefectEditModel : ViewModelBase
     {
         private int? _defectTypeId;
+        private int _defectQty;
+        private string _disposition = "NOT_SHIPPABLE";
         private string _defectCode = string.Empty;
         private string _category1Name = string.Empty;
         private string _category2Name = string.Empty;
@@ -270,6 +293,18 @@ namespace Mes.Wpf.Modules.InspectionSchedules.Dtos
         {
             get => _defectTypeId;
             set => SetProperty(ref _defectTypeId, value);
+        }
+
+        public int DefectQty
+        {
+            get => _defectQty;
+            set => SetProperty(ref _defectQty, value);
+        }
+
+        public string Disposition
+        {
+            get => _disposition;
+            set => SetProperty(ref _disposition, value);
         }
 
         public string DefectCode
@@ -311,6 +346,8 @@ namespace Mes.Wpf.Modules.InspectionSchedules.Dtos
         public void Clear()
         {
             DefectTypeId = null;
+            DefectQty = 0;
+            Disposition = "NOT_SHIPPABLE";
             DefectCode = string.Empty;
             Category1Name = string.Empty;
             Category2Name = string.Empty;
@@ -321,10 +358,18 @@ namespace Mes.Wpf.Modules.InspectionSchedules.Dtos
 
     public class DefectAttachmentEditModel : ViewModelBase
     {
+        private int? _inspectionDefectAttachmentId;
         private string _fileUri = string.Empty;
         private string _fileName = string.Empty;
         private string _mimeType = string.Empty;
         private string _memo = string.Empty;
+        private string _localFilePath = string.Empty;
+
+        public int? InspectionDefectAttachmentId
+        {
+            get => _inspectionDefectAttachmentId;
+            set => SetProperty(ref _inspectionDefectAttachmentId, value);
+        }
 
         public string FileUri
         {
@@ -349,6 +394,55 @@ namespace Mes.Wpf.Modules.InspectionSchedules.Dtos
             get => _memo;
             set => SetProperty(ref _memo, value);
         }
+
+        public string LocalFilePath
+        {
+            get => _localFilePath;
+            set => SetProperty(ref _localFilePath, value);
+        }
+    }
+
+
+    public class InspectionRoundSummaryDto
+    {
+        [JsonPropertyName("inspection_result_id")]
+        public long InspectionResultId { get; set; }
+
+        [JsonPropertyName("inspection_schedule_id")]
+        public long InspectionScheduleId { get; set; }
+
+        [JsonPropertyName("inspection_date")]
+        public DateTime InspectionDate { get; set; }
+
+        [JsonPropertyName("schedule_status")]
+        public string ScheduleStatus { get; set; } = string.Empty;
+
+        [JsonPropertyName("inspection_round")]
+        public int InspectionRound { get; set; }
+
+        [JsonPropertyName("is_partial")]
+        public bool IsPartial { get; set; }
+
+        [JsonPropertyName("next_inspection_date")]
+        public DateTime? NextInspectionDate { get; set; }
+
+        [JsonPropertyName("partial_reason")]
+        public string? PartialReason { get; set; }
+
+        [JsonPropertyName("good_qty")]
+        public int GoodQty { get; set; }
+
+        [JsonPropertyName("defect_ship_qty")]
+        public int DefectShipQty { get; set; }
+
+        [JsonPropertyName("defect_qty")]
+        public int DefectQty { get; set; }
+
+        [JsonPropertyName("received_qty")]
+        public int ReceivedQty { get; set; }
+
+        [JsonIgnore]
+        public string ResultTypeDisplay => IsPartial ? "분할" : "최종";
     }
     public class InspectionStockLotListDto
     {

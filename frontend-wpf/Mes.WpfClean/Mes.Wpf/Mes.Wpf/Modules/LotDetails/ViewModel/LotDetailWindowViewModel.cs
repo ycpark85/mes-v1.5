@@ -1,9 +1,10 @@
-﻿using System;
+using System;
 using System.Collections.ObjectModel;
 using System.Threading.Tasks;
 using System.Windows.Input;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Windows;
 using Mes.Wpf.Core.Common;
 using Mes.Wpf.Core.Constants;
@@ -19,6 +20,7 @@ namespace Mes.Wpf.Modules.LotDetails.ViewModels
 
         private bool _isLoading;
         private LotTraceDetailDto? _detail;
+        private LotTraceTimelineItemDto? _selectedTimelineItem;
 
         public LotDetailWindowViewModel(
             IApiClient apiClient,
@@ -28,6 +30,9 @@ namespace Mes.Wpf.Modules.LotDetails.ViewModels
             _messageService = messageService;
 
             OutsourceWorks = new ObservableCollection<LotTraceOutsourceWorkDto>();
+            InspectionRounds = new ObservableCollection<LotTraceInspectionRoundDto>();
+            InspectionNoteRounds = new ObservableCollection<LotTraceInspectionRoundDto>();
+            Timeline = new ObservableCollection<LotTraceTimelineItemDto>();
             Defects = new ObservableCollection<LotTraceInspectionDefectDto>();
 
             CloseCommand = new RelayCommand(_ => RequestClose?.Invoke());
@@ -46,7 +51,19 @@ namespace Mes.Wpf.Modules.LotDetails.ViewModels
 
         public ObservableCollection<LotTraceOutsourceWorkDto> OutsourceWorks { get; }
 
+        public ObservableCollection<LotTraceInspectionRoundDto> InspectionRounds { get; }
+
+        public ObservableCollection<LotTraceInspectionRoundDto> InspectionNoteRounds { get; }
+
+        public ObservableCollection<LotTraceTimelineItemDto> Timeline { get; }
+
         public ObservableCollection<LotTraceInspectionDefectDto> Defects { get; }
+
+        public LotTraceTimelineItemDto? SelectedTimelineItem
+        {
+            get => _selectedTimelineItem;
+            set => SetProperty(ref _selectedTimelineItem, value);
+        }
 
         public ICommand CloseCommand { get; }
         public ICommand CopyLotNoCommand { get; }
@@ -73,10 +90,51 @@ namespace Mes.Wpf.Modules.LotDetails.ViewModels
         public string LotNo => Detail?.LotBasic.LotNo ?? "-";
         public string LotStatus => Detail?.LotBasic.Status ?? "-";
         public string ReworkText => Detail?.LotBasic.IsRework == true ? "재작업" : "일반";
+        public bool IsRework => Detail?.LotBasic.IsRework == true;
         public string ParentLotNo => Detail?.LotBasic.ParentLotNo ?? "-";
+        public string ReworkReasonText => Detail?.LotBasic.IsRework == true
+            && !string.IsNullOrWhiteSpace(Detail.LotBasic.Memo)
+                ? Detail.LotBasic.Memo!
+                : "-";
         public string LotQtyText => FormatInt(Detail?.LotBasic.LotQty);
         public string CreatedDateText => FormatDate(Detail?.LotBasic.CreatedDate);
         public string DueDateText => FormatDate(Detail?.LotBasic.DueDate);
+        public string LotQtyKpiText => Detail == null
+            ? "-"
+            : $"{Detail.LotBasic.LotQty:N0} {Detail.LotBasic.Uom}";
+        public string OutsourceCompletedQtyKpiText
+        {
+            get
+            {
+                var completedQty = Detail?.OutsourceWorks
+                    .Where(x => x.ConfirmedOutsourceQty.HasValue)
+                    .OrderByDescending(x => x.WorkDoneAt)
+                    .Select(x => x.ConfirmedOutsourceQty)
+                    .FirstOrDefault();
+                return FormatNullableInt(completedQty);
+            }
+        }
+        public string InspectionQtyKpiText => FormatNullableInt(Detail?.Inspection?.InspectedQty);
+        public string GoodQtyKpiText => FormatNullableInt(Detail?.Inspection?.GoodQty);
+        public string DefectQtyKpiText => FormatNullableInt(Detail?.Inspection?.DefectQty);
+        public string DueStatusText
+        {
+            get
+            {
+                if (Detail == null)
+                {
+                    return "-";
+                }
+
+                var days = (Detail.LotBasic.DueDate.Date - DateTime.Today).Days;
+                return days switch
+                {
+                    < 0 => $"D+{Math.Abs(days)}",
+                    0 => "D-DAY",
+                    _ => $"D-{days}",
+                };
+            }
+        }
 
         public string PartnerName => Detail?.ProductOrder.PartnerName ?? "-";
         public string ProductCode => Detail?.ProductOrder.ProductCode ?? "-";
@@ -171,6 +229,9 @@ namespace Mes.Wpf.Modules.LotDetails.ViewModels
                 {
                     Detail = null;
                     OutsourceWorks.Clear();
+                    InspectionRounds.Clear();
+                    InspectionNoteRounds.Clear();
+                    Timeline.Clear();
                     Defects.Clear();
                     _messageService.ShowError(result.Message ?? "LOT 상세정보 조회에 실패했습니다.");
                     return;
@@ -183,6 +244,25 @@ namespace Mes.Wpf.Modules.LotDetails.ViewModels
                 {
                     OutsourceWorks.Add(item);
                 }
+
+                InspectionRounds.Clear();
+                InspectionNoteRounds.Clear();
+                foreach (var item in result.Data.InspectionRounds)
+                {
+                    InspectionRounds.Add(item);
+                    if (item.InspectionResultId.HasValue)
+                    {
+                        InspectionNoteRounds.Add(item);
+                    }
+                }
+
+                Timeline.Clear();
+                foreach (var item in result.Data.Timeline)
+                {
+                    Timeline.Add(item);
+                }
+                SelectedTimelineItem = Timeline.LastOrDefault(x => x.IsCurrent)
+                    ?? Timeline.LastOrDefault();
 
                 Defects.Clear();
                 if (result.Data.Inspection != null)
@@ -237,10 +317,18 @@ namespace Mes.Wpf.Modules.LotDetails.ViewModels
             OnPropertyChanged(nameof(LotNo));
             OnPropertyChanged(nameof(LotStatus));
             OnPropertyChanged(nameof(ReworkText));
+            OnPropertyChanged(nameof(IsRework));
             OnPropertyChanged(nameof(ParentLotNo));
+            OnPropertyChanged(nameof(ReworkReasonText));
             OnPropertyChanged(nameof(LotQtyText));
             OnPropertyChanged(nameof(CreatedDateText));
             OnPropertyChanged(nameof(DueDateText));
+            OnPropertyChanged(nameof(LotQtyKpiText));
+            OnPropertyChanged(nameof(OutsourceCompletedQtyKpiText));
+            OnPropertyChanged(nameof(InspectionQtyKpiText));
+            OnPropertyChanged(nameof(GoodQtyKpiText));
+            OnPropertyChanged(nameof(DefectQtyKpiText));
+            OnPropertyChanged(nameof(DueStatusText));
 
             OnPropertyChanged(nameof(PartnerName));
             OnPropertyChanged(nameof(ProductCode));

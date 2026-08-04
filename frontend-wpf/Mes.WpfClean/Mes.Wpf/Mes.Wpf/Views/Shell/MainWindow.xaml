@@ -330,22 +330,6 @@
                             </StackPanel>
                         </Expander>
 
-                        <Expander Header="▥  원자재관리"
-                                  Style="{StaticResource SidebarCategoryExpanderStyle}"
-                                  IsExpanded="False">
-                            <StackPanel>
-                                <Button x:Name="RawMaterialMasterMenuButton"
-                                        Content="원자재 기준정보"
-                                        Style="{StaticResource SidebarMenuButtonStyle}"
-                                        Click="RawMaterialMaster_Click"/>
-
-                                <Button x:Name="RawMaterialInventoryMenuButton"
-                                        Content="원자재 재고관리"
-                                        Style="{StaticResource SidebarMenuButtonStyle}"
-                                        Click="RawMaterialInventory_Click"/>
-                            </StackPanel>
-                        </Expander>
-
                         <Expander Header="⚙  외주관리"
                                   Style="{StaticResource SidebarCategoryExpanderStyle}"
                                   IsExpanded="False">

@@ -65,18 +65,28 @@ class InspectionResultQueryTests(unittest.TestCase):
         self.db.close()
         self.engine.dispose()
 
-    def test_list_inspection_results_returns_done_rows_with_stock_summary(self) -> None:
+    def test_list_inspection_results_returns_partial_and_done_rows_with_rounds(self) -> None:
         result = list_inspection_results_for_grid(self.db, q="prd-a")
 
-        self.assertEqual(1, len(result.items))
-        self.assertEqual(1, result.total_count)
+        self.assertEqual(2, len(result.items))
+        self.assertEqual(2, result.total_count)
         item = result.items[0]
         self.assertEqual(2, item.inspection_result_id)
         self.assertEqual("LOT-A", item.lot_no)
+        self.assertEqual("DONE", item.schedule_status)
+        self.assertEqual(2, item.inspection_round)
+        self.assertEqual(2, item.inspection_round_count)
+        self.assertFalse(item.is_partial)
         self.assertEqual(55, item.received_qty)
         self.assertEqual(20, item.result_ship_qty)
         self.assertEqual(40, item.stock_in_qty)
         self.assertEqual(4, item.defect_qty)
+
+        partial_item = result.items[1]
+        self.assertEqual(1, partial_item.inspection_result_id)
+        self.assertEqual("PARTIAL_DONE", partial_item.schedule_status)
+        self.assertEqual(1, partial_item.inspection_round)
+        self.assertTrue(partial_item.is_partial)
 
     def test_list_inspection_results_filters_by_partner_product_lot_and_date(self) -> None:
         result = list_inspection_results_for_grid(
@@ -99,6 +109,11 @@ class InspectionResultQueryTests(unittest.TestCase):
 
         self.assertIsNotNone(detail.result)
         self.assertEqual(2, detail.result.inspection_result_id)
+        self.assertEqual("done", detail.result.memo)
+        self.assertEqual("DONE", detail.schedule_status)
+        self.assertEqual(2, detail.inspection_round)
+        self.assertEqual(2, detail.inspection_round_count)
+        self.assertEqual([1, 2], [row.inspection_round for row in detail.rounds])
         self.assertEqual(30, detail.accumulated.good_qty)
         self.assertEqual(5, detail.accumulated.defect_ship_qty)
         self.assertEqual(3, detail.accumulated.defect_qty)

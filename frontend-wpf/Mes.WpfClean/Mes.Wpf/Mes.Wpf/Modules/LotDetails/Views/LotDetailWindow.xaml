@@ -1,67 +1,68 @@
-﻿<Window x:Class="Mes.Wpf.Modules.LotDetails.Views.LotDetailWindow"
+<Window x:Class="Mes.Wpf.Modules.LotDetails.Views.LotDetailWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="LOT 상세정보"
-        Width="1120"
-        Height="820"
-        MinWidth="1050"
-        MinHeight="720"
+        Width="1360"
+        Height="900"
+        MinWidth="1180"
+        MinHeight="760"
         WindowStartupLocation="CenterOwner"
         ResizeMode="CanResize"
         Background="#F3F4F6">
 
     <Window.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVisibilityConverter"/>
+
+        <Style x:Key="CardStyle" TargetType="Border">
+            <Setter Property="Background" Value="White"/>
+            <Setter Property="BorderBrush" Value="#D7DEE8"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="7"/>
+            <Setter Property="Padding" Value="14"/>
+        </Style>
+
         <Style x:Key="SectionTitleStyle" TargetType="TextBlock">
-            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="FontSize" Value="15"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
             <Setter Property="Foreground" Value="#111827"/>
-            <Setter Property="Margin" Value="0,0,0,8"/>
+            <Setter Property="Margin" Value="0,0,0,10"/>
         </Style>
 
         <Style x:Key="LabelStyle" TargetType="TextBlock">
             <Setter Property="Foreground" Value="#6B7280"/>
             <Setter Property="VerticalAlignment" Value="Center"/>
-            <Setter Property="Margin" Value="0,0,8,4"/>
+            <Setter Property="Margin" Value="0,3"/>
         </Style>
 
         <Style x:Key="ValueStyle" TargetType="TextBlock">
             <Setter Property="Foreground" Value="#111827"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
             <Setter Property="VerticalAlignment" Value="Center"/>
-            <Setter Property="Margin" Value="0,0,0,4"/>
             <Setter Property="TextWrapping" Value="Wrap"/>
+            <Setter Property="Margin" Value="0,3"/>
         </Style>
 
-        <Style x:Key="SectionBorderStyle" TargetType="Border">
+        <Style x:Key="KpiLabelStyle" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="#4B5563"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="HorizontalAlignment" Value="Center"/>
+        </Style>
+
+        <Style x:Key="KpiValueStyle" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="#1D4ED8"/>
+            <Setter Property="FontSize" Value="22"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="HorizontalAlignment" Value="Center"/>
+            <Setter Property="Margin" Value="0,5,0,0"/>
+        </Style>
+
+        <Style x:Key="SmallButtonStyle" TargetType="Button">
+            <Setter Property="Height" Value="28"/>
+            <Setter Property="Padding" Value="10,0"/>
             <Setter Property="Background" Value="White"/>
-            <Setter Property="BorderBrush" Value="#D1D5DB"/>
-            <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="CornerRadius" Value="6"/>
-            <Setter Property="Padding" Value="12"/>
-        </Style>
-
-        <Style x:Key="SubSectionBorderStyle" TargetType="Border">
-            <Setter Property="Background" Value="#F8FAFC"/>
-            <Setter Property="BorderBrush" Value="#E5E7EB"/>
-            <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="CornerRadius" Value="5"/>
-            <Setter Property="Padding" Value="10"/>
-        </Style>
-
-        <Style x:Key="GridTextStyle" TargetType="TextBlock">
-            <Setter Property="VerticalAlignment" Value="Center"/>
-            <Setter Property="TextAlignment" Value="Center"/>
-            <Setter Property="TextWrapping" Value="Wrap"/>
-        </Style>
-
-        <Style x:Key="SmallOutlineButtonStyle" TargetType="Button">
-            <Setter Property="Height" Value="24"/>
-            <Setter Property="Padding" Value="8,0"/>
-            <Setter Property="Background" Value="White"/>
+            <Setter Property="Foreground" Value="#374151"/>
             <Setter Property="BorderBrush" Value="#CBD5E1"/>
             <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="Foreground" Value="#374151"/>
-            <Setter Property="FontSize" Value="12"/>
             <Setter Property="Cursor" Value="Hand"/>
         </Style>
 
@@ -70,28 +71,36 @@
             <Setter Property="BorderBrush" Value="#E5E7EB"/>
             <Setter Property="BorderThickness" Value="0,0,0,1"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
-            <Setter Property="Height" Value="34"/>
+            <Setter Property="Height" Value="32"/>
             <Setter Property="HorizontalContentAlignment" Value="Center"/>
             <Setter Property="VerticalContentAlignment" Value="Center"/>
         </Style>
 
         <Style TargetType="DataGridRow">
-            <Setter Property="Height" Value="32"/>
+            <Setter Property="MinHeight" Value="31"/>
         </Style>
 
         <Style TargetType="DataGridCell">
-            <Setter Property="Padding" Value="4,0"/>
+            <Setter Property="Padding" Value="5,0"/>
             <Setter Property="VerticalContentAlignment" Value="Center"/>
             <Setter Property="HorizontalContentAlignment" Value="Center"/>
+            <Setter Property="BorderBrush" Value="#EEF2F7"/>
+        </Style>
+
+        <Style x:Key="GridTextStyle" TargetType="TextBlock">
+            <Setter Property="HorizontalAlignment" Value="Center"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="TextAlignment" Value="Center"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
         </Style>
     </Window.Resources>
 
-    <Grid Margin="16">
+    <Grid Margin="18">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="12"/>
             <RowDefinition Height="Auto"/>
-            <RowDefinition Height="12"/>
+            <RowDefinition Height="14"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="12"/>
             <RowDefinition Height="Auto"/>
@@ -106,492 +115,496 @@
 
             <StackPanel Grid.Column="0">
                 <TextBlock Text="LOT 상세정보"
-                           FontSize="22"
+                           FontSize="19"
                            FontWeight="Bold"
                            Foreground="#111827"/>
-
-                <StackPanel Orientation="Horizontal"
-                            Margin="0,4,0,0">
+                <StackPanel Orientation="Horizontal" Margin="0,7,0,0">
                     <TextBlock Text="{Binding LotNo}"
-                               VerticalAlignment="Center"
-                               FontSize="14"
-                               Foreground="#6B7280"/>
+                               FontSize="25"
+                               FontWeight="Bold"
+                               Foreground="#111827"
+                               VerticalAlignment="Center"/>
                     <Button Content="복사"
+                            Style="{StaticResource SmallButtonStyle}"
                             Command="{Binding CopyLotNoCommand}"
-                            Style="{StaticResource SmallOutlineButtonStyle}"
-                            Margin="8,0,0,0"/>
+                            Margin="10,0,0,0"/>
+                    <Border Margin="10,0,0,0"
+                            Padding="10,4"
+                            Background="#FFF7ED"
+                            BorderBrush="#FDBA74"
+                            BorderThickness="1"
+                            CornerRadius="5"
+                            Visibility="{Binding IsRework, Converter={StaticResource BoolToVisibilityConverter}}">
+                        <TextBlock Text="재작업" Foreground="#C2410C" FontWeight="SemiBold"/>
+                    </Border>
+                    <Border Margin="8,0,0,0"
+                            Padding="10,4"
+                            Background="#ECFDF5"
+                            BorderBrush="#86EFAC"
+                            BorderThickness="1"
+                            CornerRadius="5">
+                        <TextBlock Text="{Binding LotStatus}" Foreground="#15803D" FontWeight="SemiBold"/>
+                    </Border>
                 </StackPanel>
             </StackPanel>
 
             <Border Grid.Column="1"
-                    Background="#DBEAFE"
-                    BorderBrush="#93C5FD"
+                    Padding="12,8"
+                    Background="#FFF7ED"
+                    BorderBrush="#FED7AA"
                     BorderThickness="1"
-                    CornerRadius="12"
-                    Padding="12,4"
-                    VerticalAlignment="Top">
-                <TextBlock Text="{Binding LotStatus}"
-                           Foreground="#1D4ED8"
-                           FontWeight="SemiBold"/>
+                    CornerRadius="6"
+                    VerticalAlignment="Bottom"
+                    MaxWidth="520"
+                    Visibility="{Binding IsRework, Converter={StaticResource BoolToVisibilityConverter}}">
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="●" Foreground="#EA580C" Margin="0,0,8,0"/>
+                    <TextBlock Text="{Binding ReworkReasonText, StringFormat=재작업 원인: {0}}"
+                               Foreground="#C2410C"
+                               FontWeight="SemiBold"
+                               TextWrapping="Wrap"/>
+                </StackPanel>
             </Border>
         </Grid>
 
-        <!-- Progress -->
-        <Border Grid.Row="2"
-                Style="{StaticResource SectionBorderStyle}">
-            <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="*"/>
-                </Grid.ColumnDefinitions>
+        <!-- KPI summary -->
+        <Grid Grid.Row="2">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="10"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="10"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="10"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="10"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="10"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
 
-                <StackPanel Grid.Column="0"
-                            HorizontalAlignment="Center">
-                    <TextBlock Text="●"
-                               Foreground="#2563EB"
-                               FontSize="20"
-                               HorizontalAlignment="Center"/>
-                    <TextBlock Text="LOT 생성"
-                               FontWeight="SemiBold"/>
+            <Border Grid.Column="0" Style="{StaticResource CardStyle}" Padding="12,10">
+                <StackPanel>
+                    <TextBlock Text="LOT 수량" Style="{StaticResource KpiLabelStyle}"/>
+                    <TextBlock Text="{Binding LotQtyKpiText}" Style="{StaticResource KpiValueStyle}"/>
                 </StackPanel>
-
-                <StackPanel Grid.Column="1"
-                            HorizontalAlignment="Center">
-                    <TextBlock Text="●"
-                               FontSize="20"
-                               HorizontalAlignment="Center">
-                        <TextBlock.Style>
-                            <Style TargetType="TextBlock">
-                                <Setter Property="Foreground" Value="#D1D5DB"/>
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding IsOutsourceInstructionCreated}" Value="True">
-                                        <Setter Property="Foreground" Value="#2563EB"/>
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </TextBlock.Style>
-                    </TextBlock>
-                    <TextBlock Text="외주작업지시"
-                               FontWeight="SemiBold"/>
+            </Border>
+            <Border Grid.Column="2" Style="{StaticResource CardStyle}" Padding="12,10">
+                <StackPanel>
+                    <TextBlock Text="외주 완료" Style="{StaticResource KpiLabelStyle}"/>
+                    <TextBlock Text="{Binding OutsourceCompletedQtyKpiText}" Style="{StaticResource KpiValueStyle}" Foreground="#0F766E"/>
                 </StackPanel>
-
-                <StackPanel Grid.Column="2"
-                            HorizontalAlignment="Center">
-                    <TextBlock Text="●"
-                               FontSize="20"
-                               HorizontalAlignment="Center">
-                        <TextBlock.Style>
-                            <Style TargetType="TextBlock">
-                                <Setter Property="Foreground" Value="#D1D5DB"/>
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding IsOutsourceWorkDone}" Value="True">
-                                        <Setter Property="Foreground" Value="#2563EB"/>
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </TextBlock.Style>
-                    </TextBlock>
-                    <TextBlock Text="외주작업완료"
-                               FontWeight="SemiBold"/>
+            </Border>
+            <Border Grid.Column="4" Style="{StaticResource CardStyle}" Padding="12,10">
+                <StackPanel>
+                    <TextBlock Text="검수" Style="{StaticResource KpiLabelStyle}"/>
+                    <TextBlock Text="{Binding InspectionQtyKpiText}" Style="{StaticResource KpiValueStyle}"/>
                 </StackPanel>
-
-                <StackPanel Grid.Column="3"
-                            HorizontalAlignment="Center">
-                    <TextBlock Text="●"
-                               FontSize="20"
-                               HorizontalAlignment="Center">
-                        <TextBlock.Style>
-                            <Style TargetType="TextBlock">
-                                <Setter Property="Foreground" Value="#D1D5DB"/>
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding IsInspectionDone}" Value="True">
-                                        <Setter Property="Foreground" Value="#2563EB"/>
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </TextBlock.Style>
-                    </TextBlock>
-                    <TextBlock Text="검수완료"
-                               FontWeight="SemiBold"/>
+            </Border>
+            <Border Grid.Column="6" Style="{StaticResource CardStyle}" Padding="12,10">
+                <StackPanel>
+                    <TextBlock Text="양품" Style="{StaticResource KpiLabelStyle}"/>
+                    <TextBlock Text="{Binding GoodQtyKpiText}" Style="{StaticResource KpiValueStyle}" Foreground="#15803D"/>
                 </StackPanel>
-            </Grid>
-        </Border>
+            </Border>
+            <Border Grid.Column="8" Style="{StaticResource CardStyle}" Padding="12,10">
+                <StackPanel>
+                    <TextBlock Text="불량" Style="{StaticResource KpiLabelStyle}"/>
+                    <TextBlock Text="{Binding DefectQtyKpiText}" Style="{StaticResource KpiValueStyle}" Foreground="#EA580C"/>
+                </StackPanel>
+            </Border>
+            <Border Grid.Column="10" Style="{StaticResource CardStyle}" Padding="12,10">
+                <StackPanel>
+                    <TextBlock Text="납기" Style="{StaticResource KpiLabelStyle}"/>
+                    <TextBlock Text="{Binding DueStatusText}" Style="{StaticResource KpiValueStyle}" Foreground="#7C3AED"/>
+                </StackPanel>
+            </Border>
+        </Grid>
 
-        <!-- Content -->
-        <ScrollViewer Grid.Row="4"
-                      VerticalScrollBarVisibility="Auto">
-            <StackPanel>
+        <!-- Timeline + details -->
+        <Grid Grid.Row="4">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="430"/>
+                <ColumnDefinition Width="14"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <Border Grid.Column="0" Style="{StaticResource CardStyle}" Padding="14,12">
                 <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="12"/>
-                        <ColumnDefinition Width="*"/>
-                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
 
-                    <!-- LOT 기본정보 -->
-                    <Border Grid.Column="0"
-                            Style="{StaticResource SectionBorderStyle}">
-                        <StackPanel>
-                            <TextBlock Text="LOT 기본정보"
-                                       Style="{StaticResource SectionTitleStyle}"/>
+                    <TextBlock Text="진행 타임라인" Style="{StaticResource SectionTitleStyle}"/>
 
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="95"/>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="95"/>
-                                    <ColumnDefinition Width="*"/>
-                                </Grid.ColumnDefinitions>
+                    <ListBox Grid.Row="1"
+                             ItemsSource="{Binding Timeline}"
+                             SelectedItem="{Binding SelectedTimelineItem}"
+                             BorderThickness="0"
+                             Background="Transparent"
+                             ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                             ScrollViewer.VerticalScrollBarVisibility="Auto">
+                        <ListBox.ItemContainerStyle>
+                            <Style TargetType="ListBoxItem">
+                                <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                                <Setter Property="Padding" Value="0"/>
+                                <Setter Property="Margin" Value="0,0,0,4"/>
+                                <Setter Property="Background" Value="Transparent"/>
+                                <Setter Property="BorderBrush" Value="Transparent"/>
+                                <Setter Property="BorderThickness" Value="2,0,0,0"/>
+                                <Style.Triggers>
+                                    <Trigger Property="IsSelected" Value="True">
+                                        <Setter Property="Background" Value="#EFF6FF"/>
+                                        <Setter Property="BorderBrush" Value="#2563EB"/>
+                                    </Trigger>
+                                </Style.Triggers>
+                            </Style>
+                        </ListBox.ItemContainerStyle>
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <Grid MinHeight="78" Margin="8,5">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="28"/>
+                                        <ColumnDefinition Width="92"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
 
-                                <Grid.RowDefinitions>
-                                    <RowDefinition Height="Auto"/>
-                                    <RowDefinition Height="Auto"/>
-                                    <RowDefinition Height="Auto"/>
-                                    <RowDefinition Height="8"/>
-                                    <RowDefinition Height="Auto"/>
-                                    <RowDefinition Height="Auto"/>
-                                    <RowDefinition Height="Auto"/>
-                                </Grid.RowDefinitions>
-
-                                <TextBlock Grid.Row="0" Grid.Column="0" Text="LOT 번호" Style="{StaticResource LabelStyle}"/>
-                                <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal">
-                                    <TextBlock Text="{Binding LotNo}" Style="{StaticResource ValueStyle}"/>
-                                    <Button Content="복사"
-                                            Command="{Binding CopyLotNoCommand}"
-                                            Style="{StaticResource SmallOutlineButtonStyle}"
-                                            Margin="8,0,0,4"/>
-                                </StackPanel>
-
-                                <TextBlock Grid.Row="0" Grid.Column="2" Text="상태" Style="{StaticResource LabelStyle}"/>
-                                <TextBlock Grid.Row="0" Grid.Column="3" Text="{Binding LotStatus}" Style="{StaticResource ValueStyle}"/>
-
-                                <TextBlock Grid.Row="1" Grid.Column="0" Text="재작업" Style="{StaticResource LabelStyle}"/>
-                                <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding ReworkText}" Style="{StaticResource ValueStyle}"/>
-
-                                <TextBlock Grid.Row="1" Grid.Column="2" Text="부모 LOT" Style="{StaticResource LabelStyle}"/>
-                                <TextBlock Grid.Row="1" Grid.Column="3" Text="{Binding ParentLotNo}" Style="{StaticResource ValueStyle}"/>
-
-                                <TextBlock Grid.Row="2" Grid.Column="0" Text="LOT 수량" Style="{StaticResource LabelStyle}"/>
-                                <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding LotQtyText}" Style="{StaticResource ValueStyle}"/>
-
-                                <TextBlock Grid.Row="2" Grid.Column="2" Text="생성일" Style="{StaticResource LabelStyle}"/>
-                                <TextBlock Grid.Row="2" Grid.Column="3" Text="{Binding CreatedDateText}" Style="{StaticResource ValueStyle}"/>
-
-                                <Border Grid.Row="4"
-                                        Grid.Column="0"
-                                        Grid.ColumnSpan="4"
-                                        Style="{StaticResource SubSectionBorderStyle}"
-                                        Margin="0,4,0,0">
-                                    <Grid>
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="95"/>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="95"/>
-                                            <ColumnDefinition Width="*"/>
-                                        </Grid.ColumnDefinitions>
-
-                                        <Grid.RowDefinitions>
-                                            <RowDefinition Height="Auto"/>
-                                            <RowDefinition Height="Auto"/>
-                                            <RowDefinition Height="Auto"/>
-                                        </Grid.RowDefinitions>
-
-                                        <TextBlock Grid.Row="0" Grid.Column="0" Text="처리계획" Style="{StaticResource LabelStyle}"/>
-                                        <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding PlanTypeDisplayText}" Style="{StaticResource ValueStyle}"/>
-
-                                        <TextBlock Grid.Row="0" Grid.Column="2" Text="출고목표" Style="{StaticResource LabelStyle}"/>
-                                        <TextBlock Grid.Row="0" Grid.Column="3" Text="{Binding PlanShipTargetQtyText}" Style="{StaticResource ValueStyle}"/>
-
-                                        <TextBlock Grid.Row="1" Grid.Column="0" Text="계획현재고" Style="{StaticResource LabelStyle}"/>
-                                        <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding PlanAvailableInventoryQtyText}" Style="{StaticResource ValueStyle}"/>
-
-                                        <TextBlock Grid.Row="1" Grid.Column="2" Text="재고출하" Style="{StaticResource LabelStyle}"/>
-                                        <TextBlock Grid.Row="1" Grid.Column="3" Text="{Binding PlanStockShipQtyText}" Style="{StaticResource ValueStyle}"/>
-
-                                        <TextBlock Grid.Row="2" Grid.Column="0" Text="생산필요" Style="{StaticResource LabelStyle}"/>
-                                        <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding PlanProductionQtyText}" Style="{StaticResource ValueStyle}"/>
-
-                                        <TextBlock Grid.Row="2" Grid.Column="2" Text="부족종료" Style="{StaticResource LabelStyle}"/>
-                                        <TextBlock Grid.Row="2" Grid.Column="3" Text="{Binding PlanShortCloseText}" Style="{StaticResource ValueStyle}"/>
+                                    <Grid Grid.Column="0">
+                                        <Border Width="2"
+                                                Background="#D1D5DB"
+                                                HorizontalAlignment="Center"
+                                                Margin="0,24,0,-16"/>
+                                        <Ellipse Width="16" Height="16"
+                                                 HorizontalAlignment="Center"
+                                                 VerticalAlignment="Top"
+                                                 Margin="0,7,0,0">
+                                            <Ellipse.Style>
+                                                <Style TargetType="Ellipse">
+                                                    <Setter Property="Fill" Value="#16A34A"/>
+                                                    <Setter Property="Stroke" Value="White"/>
+                                                    <Setter Property="StrokeThickness" Value="3"/>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsCurrent}" Value="True">
+                                                            <Setter Property="Fill" Value="#2563EB"/>
+                                                        </DataTrigger>
+                                                        <DataTrigger Binding="{Binding IsPartial}" Value="True">
+                                                            <Setter Property="Fill" Value="#F97316"/>
+                                                        </DataTrigger>
+                                                        <DataTrigger Binding="{Binding IsCanceled}" Value="True">
+                                                            <Setter Property="Fill" Value="#DC2626"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Ellipse.Style>
+                                        </Ellipse>
                                     </Grid>
-                                </Border>
 
-                                <TextBlock Grid.Row="6" Grid.Column="0" Text="납기일" Style="{StaticResource LabelStyle}"/>
-                                <TextBlock Grid.Row="6" Grid.Column="1" Text="{Binding DueDateText}" Style="{StaticResource ValueStyle}"/>
-                            </Grid>
-                        </StackPanel>
-                    </Border>
+                                    <StackPanel Grid.Column="1" Margin="3,4,8,0">
+                                        <TextBlock Text="{Binding EventAt, StringFormat=yyyy-MM-dd}"
+                                                   Foreground="#4B5563"
+                                                   FontSize="12"/>
+                                        <TextBlock Text="{Binding EventAt, StringFormat=HH:mm}"
+                                                   Foreground="#6B7280"
+                                                   FontSize="12"
+                                                   Margin="0,2,0,0"/>
+                                    </StackPanel>
 
-                    <!-- 품목 / 수주정보 -->
-                    <Border Grid.Column="2"
-                            Style="{StaticResource SectionBorderStyle}">
+                                    <StackPanel Grid.Column="2" Margin="0,2,4,4">
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="{Binding Title}"
+                                                       FontWeight="SemiBold"
+                                                       FontSize="14"
+                                                       Foreground="#111827"/>
+                                            <Border Margin="8,0,0,0"
+                                                    Padding="6,2"
+                                                    Background="#EFF6FF"
+                                                    BorderBrush="#BFDBFE"
+                                                    BorderThickness="1"
+                                                    CornerRadius="4">
+                                                <Border.Style>
+                                                    <Style TargetType="Border">
+                                                        <Setter Property="Visibility" Value="Visible"/>
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding BadgeText}" Value="">
+                                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </Border.Style>
+                                                <TextBlock Text="{Binding BadgeText}"
+                                                           Foreground="#1D4ED8"
+                                                           FontSize="11"
+                                                           FontWeight="SemiBold"/>
+                                            </Border>
+                                        </StackPanel>
+                                        <TextBlock Text="{Binding Summary}"
+                                                   Margin="0,5,0,0"
+                                                   Foreground="#4B5563"
+                                                   FontSize="12"
+                                                   TextWrapping="Wrap"/>
+                                        <TextBlock Text="{Binding Memo, StringFormat=메모: {0}}"
+                                                   Margin="0,4,0,0"
+                                                   Foreground="#C2410C"
+                                                   FontSize="12"
+                                                   TextWrapping="Wrap"
+                                                   Visibility="{Binding HasMemo, Converter={StaticResource BoolToVisibilityConverter}}"/>
+                                    </StackPanel>
+                                </Grid>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </Grid>
+            </Border>
+
+            <ScrollViewer Grid.Column="2"
+                          VerticalScrollBarVisibility="Auto"
+                          HorizontalScrollBarVisibility="Disabled">
+                <StackPanel>
+                    <!-- Core information -->
+                    <Border Style="{StaticResource CardStyle}">
                         <StackPanel>
-                            <TextBlock Text="품목 / 수주정보"
-                                       Style="{StaticResource SectionTitleStyle}"/>
-
+                            <TextBlock Text="핵심정보" Style="{StaticResource SectionTitleStyle}"/>
                             <Grid>
                                 <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="95"/>
+                                    <ColumnDefinition Width="90"/>
                                     <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="95"/>
+                                    <ColumnDefinition Width="100"/>
                                     <ColumnDefinition Width="*"/>
                                 </Grid.ColumnDefinitions>
-
                                 <Grid.RowDefinitions>
                                     <RowDefinition Height="Auto"/>
                                     <RowDefinition Height="Auto"/>
                                     <RowDefinition Height="Auto"/>
                                     <RowDefinition Height="Auto"/>
-                                    <RowDefinition Height="8"/>
                                     <RowDefinition Height="Auto"/>
                                 </Grid.RowDefinitions>
 
                                 <TextBlock Grid.Row="0" Grid.Column="0" Text="거래처" Style="{StaticResource LabelStyle}"/>
                                 <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding PartnerName}" Style="{StaticResource ValueStyle}"/>
+                                <TextBlock Grid.Row="0" Grid.Column="2" Text="수주수량" Style="{StaticResource LabelStyle}"/>
+                                <TextBlock Grid.Row="0" Grid.Column="3" Text="{Binding OrderQtyText}" Style="{StaticResource ValueStyle}"/>
 
-                                <TextBlock Grid.Row="0" Grid.Column="2" Text="품목코드" Style="{StaticResource LabelStyle}"/>
-                                <TextBlock Grid.Row="0" Grid.Column="3" Text="{Binding ProductCode}" Style="{StaticResource ValueStyle}"/>
+                                <TextBlock Grid.Row="1" Grid.Column="0" Text="품목코드" Style="{StaticResource LabelStyle}"/>
+                                <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding ProductCode}" Style="{StaticResource ValueStyle}"/>
+                                <TextBlock Grid.Row="1" Grid.Column="2" Text="현재고" Style="{StaticResource LabelStyle}"/>
+                                <TextBlock Grid.Row="1" Grid.Column="3" Text="{Binding StockQtyText}" Style="{StaticResource ValueStyle}"/>
 
-                                <TextBlock Grid.Row="1" Grid.Column="0" Text="품목명" Style="{StaticResource LabelStyle}"/>
-                                <TextBlock Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="3" Text="{Binding ProductName}" Style="{StaticResource ValueStyle}"/>
+                                <TextBlock Grid.Row="2" Grid.Column="0" Text="품목명" Style="{StaticResource LabelStyle}"/>
+                                <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding ProductName}" Style="{StaticResource ValueStyle}"/>
+                                <TextBlock Grid.Row="2" Grid.Column="2" Text="부모 LOT" Style="{StaticResource LabelStyle}"/>
+                                <TextBlock Grid.Row="2" Grid.Column="3" Text="{Binding ParentLotNo}" Style="{StaticResource ValueStyle}"/>
 
-                                <TextBlock Grid.Row="2" Grid.Column="0" Text="규격" Style="{StaticResource LabelStyle}"/>
-                                <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding ProductSpec}" Style="{StaticResource ValueStyle}"/>
+                                <TextBlock Grid.Row="3" Grid.Column="0" Text="규격" Style="{StaticResource LabelStyle}"/>
+                                <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding ProductSpec}" Style="{StaticResource ValueStyle}"/>
+                                <TextBlock Grid.Row="3" Grid.Column="2" Text="판넬크기" Style="{StaticResource LabelStyle}"/>
+                                <TextBlock Grid.Row="3" Grid.Column="3" Text="{Binding PlateSize}" Style="{StaticResource ValueStyle}"/>
 
-                                <TextBlock Grid.Row="2" Grid.Column="2" Text="판넬크기" Style="{StaticResource LabelStyle}"/>
-                                <TextBlock Grid.Row="2" Grid.Column="3" Text="{Binding PlateSize}" Style="{StaticResource ValueStyle}"/>
-
-                                <TextBlock Grid.Row="3" Grid.Column="0" Text="수주수량" Style="{StaticResource LabelStyle}"/>
-                                <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding OrderQtyText}" Style="{StaticResource ValueStyle}"/>
-
-                                <TextBlock Grid.Row="3" Grid.Column="2" Text="현재고" Style="{StaticResource LabelStyle}"/>
-                                <TextBlock Grid.Row="3" Grid.Column="3" Text="{Binding StockQtyText}" Style="{StaticResource ValueStyle}"/>
-
-                                <Border Grid.Row="5"
-                                        Grid.Column="0"
-                                        Grid.ColumnSpan="4"
-                                        Style="{StaticResource SubSectionBorderStyle}">
-                                    <Grid>
-                                        <Grid.RowDefinitions>
-                                            <RowDefinition Height="Auto"/>
-                                            <RowDefinition Height="6"/>
-                                            <RowDefinition Height="Auto"/>
-                                        </Grid.RowDefinitions>
-
-                                        <TextBlock Grid.Row="0"
-                                                   Text="특이사항"
-                                                   FontWeight="SemiBold"
-                                                   Foreground="#374151"/>
-
-                                        <TextBlock Grid.Row="2"
-                                                   Text="{Binding OrderMemoText}"
-                                                   Foreground="#111827"
-                                                   TextWrapping="Wrap"/>
-                                    </Grid>
-                                </Border>
+                                <TextBlock Grid.Row="4" Grid.Column="0" Text="LOT 생성일" Style="{StaticResource LabelStyle}"/>
+                                <TextBlock Grid.Row="4" Grid.Column="1" Text="{Binding CreatedDateText}" Style="{StaticResource ValueStyle}"/>
+                                <TextBlock Grid.Row="4" Grid.Column="2" Text="납기일" Style="{StaticResource LabelStyle}"/>
+                                <TextBlock Grid.Row="4" Grid.Column="3" Text="{Binding DueDateText}" Style="{StaticResource ValueStyle}"/>
                             </Grid>
-                        </StackPanel>
-                    </Border>
-                </Grid>
 
-                <!-- 외주 작업 정보 -->
-                <Border Style="{StaticResource SectionBorderStyle}"
-                        Margin="0,12,0,0">
-                    <StackPanel>
-                        <TextBlock Text="외주 작업 정보"
-                                   Style="{StaticResource SectionTitleStyle}"/>
-
-                        <DataGrid ItemsSource="{Binding OutsourceWorks}"
-                                  AutoGenerateColumns="False"
-                                  IsReadOnly="True"
-                                  CanUserAddRows="False"
-                                  CanUserDeleteRows="False"
-                                  HeadersVisibility="Column"
-                                  RowHeaderWidth="0"
-                                  GridLinesVisibility="Horizontal"
-                                  Height="145"
-                                  Background="White"
-                                  ScrollViewer.VerticalScrollBarVisibility="Auto"
-                                  ScrollViewer.HorizontalScrollBarVisibility="Auto">
-                            <DataGrid.Columns>
-                                <DataGridTextColumn Header="지시번호" Binding="{Binding InstructionNo}" Width="130" ElementStyle="{StaticResource GridTextStyle}"/>
-                                <DataGridTextColumn Header="공정" Binding="{Binding ProcessType}" Width="90" ElementStyle="{StaticResource GridTextStyle}"/>
-                                <DataGridTextColumn Header="그룹" Binding="{Binding GroupSeq}" Width="70" ElementStyle="{StaticResource GridTextStyle}"/>
-                                <DataGridTextColumn Header="원단 LOT" Binding="{Binding FabricLotNo}" Width="130" ElementStyle="{StaticResource GridTextStyle}"/>
-                                <DataGridTextColumn Header="길이(m)" Binding="{Binding LengthM, StringFormat={}{0:N2}}" Width="90" ElementStyle="{StaticResource GridTextStyle}"/>
-                                <DataGridTextColumn Header="시트수량" Binding="{Binding SheetQty, StringFormat={}{0:N0}}" Width="90" ElementStyle="{StaticResource GridTextStyle}"/>
-                                <DataGridTextColumn Header="예상산출" Binding="{Binding ExpectedOutputQty, StringFormat={}{0:N0}}" Width="90" ElementStyle="{StaticResource GridTextStyle}"/>
-                                <DataGridTextColumn Header="완료수량" Binding="{Binding ConfirmedOutsourceQty, StringFormat={}{0:N0}}" Width="90" ElementStyle="{StaticResource GridTextStyle}"/>
-                                <DataGridTextColumn Header="상태" Binding="{Binding Status}" Width="90" ElementStyle="{StaticResource GridTextStyle}"/>
-                                <DataGridTextColumn Header="비고" Binding="{Binding Remark}" Width="*" ElementStyle="{StaticResource GridTextStyle}"/>
-                            </DataGrid.Columns>
-                        </DataGrid>
-
-                        <Border Style="{StaticResource SubSectionBorderStyle}"
-                                Margin="0,10,0,0">
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="95"/>
-                                    <ColumnDefinition Width="*"/>
-                                </Grid.ColumnDefinitions>
-
-                                <TextBlock Grid.Column="0"
-                                           Text="외주비고"
-                                           Style="{StaticResource LabelStyle}"/>
-
-                                <TextBlock Grid.Column="1"
-                                           Text="{Binding OutsourceWorkMemoText}"
-                                           Style="{StaticResource ValueStyle}"
-                                           TextWrapping="Wrap"/>
-                            </Grid>
-                        </Border>
-                    </StackPanel>
-                </Border>
-
-                <!-- 검수 정보 -->
-                <Border Style="{StaticResource SectionBorderStyle}"
-                        Margin="0,12,0,0">
-                    <StackPanel>
-                        <TextBlock Text="검수 정보"
-                                   Style="{StaticResource SectionTitleStyle}"/>
-
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="95"/>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="95"/>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="95"/>
-                                <ColumnDefinition Width="*"/>
-                            </Grid.ColumnDefinitions>
-
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="8"/>
-                                <RowDefinition Height="Auto"/>
-                            </Grid.RowDefinitions>
-
-                            <TextBlock Grid.Row="0" Grid.Column="0" Text="검수상태" Style="{StaticResource LabelStyle}"/>
-                            <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding InspectionStatusText}" Style="{StaticResource ValueStyle}"/>
-
-                            <TextBlock Grid.Row="0" Grid.Column="2" Text="검수일" Style="{StaticResource LabelStyle}"/>
-                            <TextBlock Grid.Row="0" Grid.Column="3" Text="{Binding InspectionDateText}" Style="{StaticResource ValueStyle}"/>
-
-                            <TextBlock Grid.Row="0" Grid.Column="4" Text="등록일" Style="{StaticResource LabelStyle}"/>
-                            <TextBlock Grid.Row="0" Grid.Column="5" Text="{Binding InspectionResultCreatedAtText}" Style="{StaticResource ValueStyle}"/>
-
-                            <TextBlock Grid.Row="1" Grid.Column="0" Text="검수수량" Style="{StaticResource LabelStyle}"/>
-                            <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding InspectedQtyText}" Style="{StaticResource ValueStyle}"/>
-
-                            <TextBlock Grid.Row="1" Grid.Column="2" Text="양품수량" Style="{StaticResource LabelStyle}"/>
-                            <TextBlock Grid.Row="1" Grid.Column="3" Text="{Binding GoodQtyText}" Style="{StaticResource ValueStyle}"/>
-
-                            <TextBlock Grid.Row="1" Grid.Column="4" Text="불량수량" Style="{StaticResource LabelStyle}"/>
-                            <TextBlock Grid.Row="1" Grid.Column="5" Text="{Binding DefectQtyText}" Style="{StaticResource ValueStyle}"/>
-
-                            <TextBlock Grid.Row="2" Grid.Column="0" Text="불량출고" Style="{StaticResource LabelStyle}"/>
-                            <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding DefectShipQtyText}" Style="{StaticResource ValueStyle}"/>
-
-                            <Border Grid.Row="4"
-                                    Grid.Column="0"
-                                    Grid.ColumnSpan="6"
-                                    Style="{StaticResource SubSectionBorderStyle}">
+                            <Border Margin="0,10,0,0"
+                                    Padding="10,7"
+                                    Background="#F8FAFC"
+                                    BorderBrush="#E5E7EB"
+                                    BorderThickness="1"
+                                    CornerRadius="5">
                                 <Grid>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
                                     <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="95"/>
+                                        <ColumnDefinition Width="80"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="75"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="75"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="75"/>
                                         <ColumnDefinition Width="*"/>
                                     </Grid.ColumnDefinitions>
-
-                                    <TextBlock Grid.Column="0"
-                                               Text="검수메모"
-                                               Style="{StaticResource LabelStyle}"/>
-
-                                    <TextBlock Grid.Column="1"
-                                               Text="{Binding InspectionMemoText}"
-                                               Style="{StaticResource ValueStyle}"
-                                               TextWrapping="Wrap"/>
+                                    <TextBlock Grid.Column="0" Text="처리계획" Style="{StaticResource LabelStyle}"/>
+                                    <TextBlock Grid.Column="1" Text="{Binding PlanTypeDisplayText}" Style="{StaticResource ValueStyle}"/>
+                                    <TextBlock Grid.Column="2" Text="출고목표" Style="{StaticResource LabelStyle}"/>
+                                    <TextBlock Grid.Column="3" Text="{Binding PlanShipTargetQtyText}" Style="{StaticResource ValueStyle}"/>
+                                    <TextBlock Grid.Column="4" Text="재고출하" Style="{StaticResource LabelStyle}"/>
+                                    <TextBlock Grid.Column="5" Text="{Binding PlanStockShipQtyText}" Style="{StaticResource ValueStyle}"/>
+                                    <TextBlock Grid.Column="6" Text="생산필요" Style="{StaticResource LabelStyle}"/>
+                                    <TextBlock Grid.Column="7" Text="{Binding PlanProductionQtyText}" Style="{StaticResource ValueStyle}"/>
+                                    <TextBlock Grid.Row="1" Grid.Column="0" Text="계획현재고" Style="{StaticResource LabelStyle}"/>
+                                    <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding PlanAvailableInventoryQtyText}" Style="{StaticResource ValueStyle}"/>
+                                    <TextBlock Grid.Row="1" Grid.Column="2" Text="부족종료" Style="{StaticResource LabelStyle}"/>
+                                    <TextBlock Grid.Row="1" Grid.Column="3" Text="{Binding PlanShortCloseText}" Style="{StaticResource ValueStyle}"/>
                                 </Grid>
                             </Border>
-                        </Grid>
-                    </StackPanel>
-                </Border>
 
-                <!-- 불량 내역 -->
-                <Border Style="{StaticResource SectionBorderStyle}"
-                        Margin="0,12,0,0">
-                    <StackPanel>
-                        <TextBlock Text="불량 내역"
-                                   Style="{StaticResource SectionTitleStyle}"/>
+                            <Border Margin="0,8,0,0"
+                                    Padding="10,7"
+                                    Background="#FFFBEB"
+                                    BorderBrush="#FDE68A"
+                                    BorderThickness="1"
+                                    CornerRadius="5">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="수주 특이사항" Foreground="#92400E" FontWeight="SemiBold" Margin="0,0,12,0"/>
+                                    <TextBlock Text="{Binding OrderMemoText}" Foreground="#78350F" TextWrapping="Wrap"/>
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+                    </Border>
 
-                        <DataGrid ItemsSource="{Binding Defects}"
-                                  AutoGenerateColumns="False"
-                                  IsReadOnly="True"
-                                  CanUserAddRows="False"
-                                  CanUserDeleteRows="False"
-                                  HeadersVisibility="Column"
-                                  RowHeaderWidth="0"
-                                  GridLinesVisibility="Horizontal"
-                                  Height="160"
-                                  Background="White"
-                                  ScrollViewer.VerticalScrollBarVisibility="Auto"
-                                  ScrollViewer.HorizontalScrollBarVisibility="Auto">
-                            <DataGrid.Columns>
-                                <DataGridTextColumn Header="불량코드" Binding="{Binding DefectTypeCode}" Width="120" ElementStyle="{StaticResource GridTextStyle}"/>
-                                <DataGridTextColumn Header="불량명" Binding="{Binding DefectTypeName}" Width="180" ElementStyle="{StaticResource GridTextStyle}"/>
-                                <DataGridTextColumn Header="수량" Binding="{Binding DefectQty, StringFormat={}{0:N0}}" Width="90" ElementStyle="{StaticResource GridTextStyle}"/>
-                                <DataGridTextColumn Header="처리" Binding="{Binding Disposition}" Width="110" ElementStyle="{StaticResource GridTextStyle}"/>
-                                <DataGridTemplateColumn Header="이미지" Width="150">
-                                    <DataGridTemplateColumn.CellTemplate>
-                                        <DataTemplate>
-                                            <Button Height="26"
-                    Padding="8,0"
-                    HorizontalAlignment="Center"
-                    Content="{Binding AttachmentDisplayText}"
-                    Command="{Binding DataContext.OpenDefectImageCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                    CommandParameter="{Binding}">
-                                                <Button.Style>
-                                                    <Style TargetType="Button">
-                                                        <Setter Property="Background" Value="#F3F4F6"/>
-                                                        <Setter Property="Foreground" Value="#6B7280"/>
-                                                        <Setter Property="BorderBrush" Value="#D1D5DB"/>
-                                                        <Setter Property="BorderThickness" Value="1"/>
-                                                        <Setter Property="IsEnabled" Value="False"/>
+                    <!-- Outsource summary -->
+                    <Border Style="{StaticResource CardStyle}" Margin="0,10,0,0">
+                        <StackPanel>
+                            <TextBlock Text="외주 작업 요약" Style="{StaticResource SectionTitleStyle}"/>
+                            <DataGrid ItemsSource="{Binding OutsourceWorks}"
+                                      AutoGenerateColumns="False"
+                                      IsReadOnly="True"
+                                      CanUserAddRows="False"
+                                      HeadersVisibility="Column"
+                                      RowHeaderWidth="0"
+                                      MaxHeight="125"
+                                      GridLinesVisibility="Horizontal">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="지시번호" Binding="{Binding InstructionNo}" Width="135" ElementStyle="{StaticResource GridTextStyle}"/>
+                                    <DataGridTextColumn Header="공정" Binding="{Binding ProcessTypeDisplay}" Width="80" ElementStyle="{StaticResource GridTextStyle}"/>
+                                    <DataGridTextColumn Header="그룹" Binding="{Binding GroupSeq}" Width="65" ElementStyle="{StaticResource GridTextStyle}"/>
+                                    <DataGridTextColumn Header="원단 LOT" Binding="{Binding FabricLotNo}" Width="125" ElementStyle="{StaticResource GridTextStyle}"/>
+                                    <DataGridTextColumn Header="길이(m)" Binding="{Binding LengthM, StringFormat={}{0:N2}}" Width="72" ElementStyle="{StaticResource GridTextStyle}"/>
+                                    <DataGridTextColumn Header="시트" Binding="{Binding SheetQty, StringFormat={}{0:N0}}" Width="58" ElementStyle="{StaticResource GridTextStyle}"/>
+                                    <DataGridTextColumn Header="예상수량" Binding="{Binding ExpectedOutputQty, StringFormat={}{0:N0}}" Width="85" ElementStyle="{StaticResource GridTextStyle}"/>
+                                    <DataGridTextColumn Header="완료수량" Binding="{Binding ConfirmedOutsourceQty, StringFormat={}{0:N0}}" Width="85" ElementStyle="{StaticResource GridTextStyle}"/>
+                                    <DataGridTextColumn Header="상태" Binding="{Binding StatusDisplay}" Width="90" ElementStyle="{StaticResource GridTextStyle}"/>
+                                    <DataGridTextColumn Header="비고" Binding="{Binding MemoDisplay}" Width="*" ElementStyle="{StaticResource GridTextStyle}"/>
+                                </DataGrid.Columns>
+                            </DataGrid>
+                        </StackPanel>
+                    </Border>
 
-                                                        <Style.Triggers>
-                                                            <DataTrigger Binding="{Binding HasAttachment}" Value="True">
-                                                                <Setter Property="Background" Value="#EEF2FF"/>
-                                                                <Setter Property="Foreground" Value="#1D4ED8"/>
-                                                                <Setter Property="BorderBrush" Value="#C7D2FE"/>
-                                                                <Setter Property="Cursor" Value="Hand"/>
-                                                                <Setter Property="IsEnabled" Value="True"/>
-                                                            </DataTrigger>
-                                                        </Style.Triggers>
-                                                    </Style>
-                                                </Button.Style>
-                                            </Button>
-                                        </DataTemplate>
-                                    </DataGridTemplateColumn.CellTemplate>
-                                </DataGridTemplateColumn>
-                                <DataGridTextColumn Header="메모" Binding="{Binding Memo}" Width="*" ElementStyle="{StaticResource GridTextStyle}"/>
-                            </DataGrid.Columns>
-                        </DataGrid>
-                    </StackPanel>
-                </Border>
-            </StackPanel>
-        </ScrollViewer>
+                    <!-- Inspection rounds -->
+                    <Border Style="{StaticResource CardStyle}" Margin="0,10,0,0">
+                        <StackPanel>
+                            <TextBlock Text="검수 회차" Style="{StaticResource SectionTitleStyle}"/>
+                            <DataGrid ItemsSource="{Binding InspectionRounds}"
+                                      AutoGenerateColumns="False"
+                                      IsReadOnly="True"
+                                      CanUserAddRows="False"
+                                      HeadersVisibility="Column"
+                                      RowHeaderWidth="0"
+                                      MaxHeight="145"
+                                      GridLinesVisibility="Horizontal">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="회차" Binding="{Binding RoundDisplay}" Width="58" ElementStyle="{StaticResource GridTextStyle}"/>
+                                    <DataGridTextColumn Header="검수일" Binding="{Binding InspectionDate, StringFormat=yyyy-MM-dd}" Width="95" ElementStyle="{StaticResource GridTextStyle}"/>
+                                    <DataGridTextColumn Header="구분" Binding="{Binding ResultTypeDisplay}" Width="68" ElementStyle="{StaticResource GridTextStyle}"/>
+                                    <DataGridTextColumn Header="검수" Binding="{Binding InspectedQty, StringFormat={}{0:N0}}" Width="70" ElementStyle="{StaticResource GridTextStyle}"/>
+                                    <DataGridTextColumn Header="양품" Binding="{Binding GoodQty, StringFormat={}{0:N0}}" Width="70" ElementStyle="{StaticResource GridTextStyle}"/>
+                                    <DataGridTextColumn Header="불량" Binding="{Binding DefectQty, StringFormat={}{0:N0}}" Width="70" ElementStyle="{StaticResource GridTextStyle}"/>
+                                    <DataGridTextColumn Header="불량출고" Binding="{Binding DefectShipQty, StringFormat={}{0:N0}}" Width="80" ElementStyle="{StaticResource GridTextStyle}"/>
+                                    <DataGridTextColumn Header="등록일" Binding="{Binding ResultCreatedAt, StringFormat=MM-dd HH:mm}" Width="90" ElementStyle="{StaticResource GridTextStyle}"/>
+                                    <DataGridTextColumn Header="등록자" Binding="{Binding CreatedBy}" Width="72" ElementStyle="{StaticResource GridTextStyle}"/>
+                                    <DataGridTextColumn Header="분할사유" Binding="{Binding PartialReasonDisplay}" Width="*" ElementStyle="{StaticResource GridTextStyle}"/>
+                                </DataGrid.Columns>
+                            </DataGrid>
+                        </StackPanel>
+                    </Border>
 
-        <!-- Footer -->
-        <StackPanel Grid.Row="6"
-                    Orientation="Horizontal"
-                    HorizontalAlignment="Right">
+                    <!-- Defects -->
+                    <Border Style="{StaticResource CardStyle}" Margin="0,10,0,0">
+                        <StackPanel>
+                            <TextBlock Text="검수회차별 불량 및 첨부이미지" Style="{StaticResource SectionTitleStyle}"/>
+                            <DataGrid ItemsSource="{Binding Defects}"
+                                      AutoGenerateColumns="False"
+                                      IsReadOnly="True"
+                                      CanUserAddRows="False"
+                                      HeadersVisibility="Column"
+                                      RowHeaderWidth="0"
+                                      MaxHeight="140"
+                                      GridLinesVisibility="Horizontal">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="회차" Binding="{Binding RoundDisplay}" Width="52" ElementStyle="{StaticResource GridTextStyle}"/>
+                                    <DataGridTextColumn Header="검수일" Binding="{Binding InspectionDate, StringFormat=MM-dd}" Width="62" ElementStyle="{StaticResource GridTextStyle}"/>
+                                    <DataGridTextColumn Header="구분" Binding="{Binding ResultTypeDisplay}" Width="55" ElementStyle="{StaticResource GridTextStyle}"/>
+                                    <DataGridTextColumn Header="불량코드" Binding="{Binding DefectTypeCode}" Width="90" ElementStyle="{StaticResource GridTextStyle}"/>
+                                    <DataGridTextColumn Header="불량명" Binding="{Binding DefectTypeName}" Width="125" ElementStyle="{StaticResource GridTextStyle}"/>
+                                    <DataGridTextColumn Header="수량" Binding="{Binding DefectQty, StringFormat={}{0:N0}}" Width="55" ElementStyle="{StaticResource GridTextStyle}"/>
+                                    <DataGridTextColumn Header="처리" Binding="{Binding DispositionDisplay}" Width="90" ElementStyle="{StaticResource GridTextStyle}"/>
+                                    <DataGridTemplateColumn Header="이미지" Width="110">
+                                        <DataGridTemplateColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <Button Height="26"
+                                                        HorizontalAlignment="Center"
+                                                        VerticalAlignment="Center"
+                                                        Content="{Binding AttachmentDisplayText}"
+                                                        Command="{Binding DataContext.OpenDefectImageCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                        CommandParameter="{Binding}">
+                                                    <Button.Style>
+                                                        <Style TargetType="Button" BasedOn="{StaticResource SmallButtonStyle}">
+                                                            <Setter Property="IsEnabled" Value="False"/>
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding HasAttachment}" Value="True">
+                                                                    <Setter Property="IsEnabled" Value="True"/>
+                                                                    <Setter Property="Foreground" Value="#1D4ED8"/>
+                                                                    <Setter Property="Background" Value="#EFF6FF"/>
+                                                                    <Setter Property="BorderBrush" Value="#BFDBFE"/>
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </Button.Style>
+                                                </Button>
+                                            </DataTemplate>
+                                        </DataGridTemplateColumn.CellTemplate>
+                                    </DataGridTemplateColumn>
+                                    <DataGridTextColumn Header="메모" Binding="{Binding Memo}" Width="*" ElementStyle="{StaticResource GridTextStyle}"/>
+                                </DataGrid.Columns>
+                            </DataGrid>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Inspection round special notes -->
+                    <Border Style="{StaticResource CardStyle}" Margin="0,10,0,0">
+                        <StackPanel>
+                            <TextBlock Text="검수실적 회차별 특이사항" Style="{StaticResource SectionTitleStyle}"/>
+                            <DataGrid ItemsSource="{Binding InspectionNoteRounds}"
+                                      AutoGenerateColumns="False"
+                                      IsReadOnly="True"
+                                      CanUserAddRows="False"
+                                      HeadersVisibility="Column"
+                                      RowHeaderWidth="0"
+                                      MaxHeight="140"
+                                      GridLinesVisibility="Horizontal">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="회차" Binding="{Binding RoundDisplay}" Width="58" ElementStyle="{StaticResource GridTextStyle}"/>
+                                    <DataGridTextColumn Header="검수일" Binding="{Binding InspectionDate, StringFormat=yyyy-MM-dd}" Width="95" ElementStyle="{StaticResource GridTextStyle}"/>
+                                    <DataGridTextColumn Header="구분" Binding="{Binding ResultTypeDisplay}" Width="68" ElementStyle="{StaticResource GridTextStyle}"/>
+                                    <DataGridTextColumn Header="등록 메모" Binding="{Binding SpecialNoteDisplay}" Width="*" ElementStyle="{StaticResource GridTextStyle}"/>
+                                </DataGrid.Columns>
+                            </DataGrid>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </ScrollViewer>
+        </Grid>
+
+        <StackPanel Grid.Row="6" Orientation="Horizontal" HorizontalAlignment="Right">
             <Button Content="닫기"
-                    Width="100"
+                    Width="110"
                     Height="34"
                     Command="{Binding CloseCommand}"/>
         </StackPanel>
+
+        <Border Grid.RowSpan="7"
+                Background="#80FFFFFF"
+                Visibility="{Binding IsLoading, Converter={StaticResource BoolToVisibilityConverter}}">
+            <TextBlock Text="LOT 상세정보를 불러오는 중입니다..."
+                       HorizontalAlignment="Center"
+                       VerticalAlignment="Center"
+                       FontSize="15"
+                       FontWeight="SemiBold"
+                       Foreground="#374151"/>
+        </Border>
     </Grid>
 </Window>

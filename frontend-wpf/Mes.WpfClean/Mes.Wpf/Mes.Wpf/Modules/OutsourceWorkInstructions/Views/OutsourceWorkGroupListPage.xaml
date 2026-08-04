@@ -119,7 +119,6 @@
                         <DataGridTextColumn Header="LOT" Binding="{Binding LotNosText}" Width="180" IsReadOnly="True" />
                         <DataGridTextColumn Header="대표품목" Binding="{Binding RepresentativeProductName}" Width="160" IsReadOnly="True" />
                         <DataGridTextColumn Header="사용M" Binding="{Binding LengthM, StringFormat={}{0:N2}}" Width="80" IsReadOnly="True" />
-                        <DataGridTextColumn Header="원자재M" Binding="{Binding RawMaterialQty, StringFormat={}{0:N2}}" Width="85" IsReadOnly="True" />
                     </DataGrid.Columns>
                 </DataGrid>
             </Border>
@@ -138,8 +137,6 @@
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="8" />
                         <RowDefinition Height="*" />
-                        <RowDefinition Height="8" />
-                        <RowDefinition Height="160" />
                         <RowDefinition Height="8" />
                         <RowDefinition Height="Auto" />
                     </Grid.RowDefinitions>
@@ -213,32 +210,7 @@
                         </DataGrid>
                     </Grid>
 
-                    <Grid Grid.Row="6">
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="6" />
-                            <RowDefinition Height="*" />
-                        </Grid.RowDefinitions>
-                        <TextBlock Text="원자재 배정" FontWeight="SemiBold" />
-                        <DataGrid Grid.Row="2"
-                                  ItemsSource="{Binding SelectedDetail.RawMaterialAllocations}"
-                                  AutoGenerateColumns="False"
-                                  CanUserAddRows="False"
-                                  CanUserDeleteRows="False"
-                                  RowHeaderWidth="0"
-                                  HorizontalScrollBarVisibility="Auto"
-                                  VerticalScrollBarVisibility="Auto">
-                            <DataGrid.Columns>
-                                <DataGridTextColumn Header="원자재" Binding="{Binding MaterialName}" Width="140" IsReadOnly="True" />
-                                <DataGridTextColumn Header="위치" Binding="{Binding LocationName}" Width="105" IsReadOnly="True" />
-                                <DataGridTextColumn Header="LOT" Binding="{Binding LotNo}" Width="120" IsReadOnly="True" />
-                                <DataGridTextColumn Header="수량" Binding="{Binding Qty, StringFormat={}{0:N2}}" Width="70" IsReadOnly="True" />
-                                <DataGridTextColumn Header="상태" Binding="{Binding Status}" Width="75" IsReadOnly="True" />
-                            </DataGrid.Columns>
-                        </DataGrid>
-                    </Grid>
-
-                    <Border Grid.Row="8"
+                    <Border Grid.Row="6"
                             IsEnabled="{Binding CanUpdateSelectedDetail}"
                             BorderBrush="#E5E7EB"
                             BorderThickness="0,1,0,0"
@@ -283,19 +255,11 @@
                             <TextBox Grid.Column="1"
                                      Height="26"
                                      Text="{Binding EditFabricLotNo, UpdateSourceTrigger=PropertyChanged}" />
-                            <Button Grid.Column="2"
-                                    Height="26"
-                                    Content="재배정"
-                                    Command="{Binding OpenEditRawMaterialAllocationCommand}" />
                             <Button Grid.Column="4"
                                     Height="26"
                                     Content="되돌림"
                                     Command="{Binding ReloadEditFormCommand}" />
                         </Grid>
-
-                        <TextBlock Text="{Binding EditRawMaterialAllocationSummary}"
-                                   Foreground="#4B5563"
-                                   Margin="62,4,0,0" />
 
                         <Grid Margin="0,6,0,0">
                             <Grid.ColumnDefinitions>

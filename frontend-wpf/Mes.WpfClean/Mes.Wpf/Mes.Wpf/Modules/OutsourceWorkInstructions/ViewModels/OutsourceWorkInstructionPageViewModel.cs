@@ -34,7 +34,6 @@ namespace Mes.Wpf.Modules.OutsourceWorkInstructions.ViewModels
             AddDraftCommand = new RelayCommand(AddDraft);
             RemoveDraftCommand = new RelayCommand(RemoveDraft);
             SetRepresentativeLotCommand = new RelayCommand(SetRepresentativeLot);
-            OpenRawMaterialAllocationCommand = new RelayCommand(OpenRawMaterialAllocation);
             UploadFileCommand = new AsyncRelayCommand(UploadFileAsync);
             SaveCommand = new AsyncRelayCommand(SaveAsync);
             ResetCommand = new AsyncRelayCommand(ResetAsync);
@@ -49,8 +48,6 @@ namespace Mes.Wpf.Modules.OutsourceWorkInstructions.ViewModels
         public RelayCommand RemoveDraftCommand { get; }
 
         public RelayCommand SetRepresentativeLotCommand { get; }
-
-        public RelayCommand OpenRawMaterialAllocationCommand { get; }
 
         public AsyncRelayCommand UploadFileCommand { get; }
 
@@ -192,8 +189,6 @@ namespace Mes.Wpf.Modules.OutsourceWorkInstructions.ViewModels
             OnPropertyChanged(nameof(SelectedDraft));
         }
 
-        public event Action<RawMaterialAllocationDialogContext>? RequestOpenRawMaterialAllocation;
-
         private void SetRepresentativeLot()
         {
             if (SelectedDraft == null)
@@ -209,45 +204,6 @@ namespace Mes.Wpf.Modules.OutsourceWorkInstructions.ViewModels
             }
 
             SelectedDraft.SetRepresentativeLot(SelectedDraft.SelectedLot);
-        }
-
-        private void OpenRawMaterialAllocation()
-        {
-            if (SelectedDraft == null)
-            {
-                _messageService.ShowWarning("원자재를 배정할 작업지시를 선택하세요.");
-                return;
-            }
-
-            if (!SelectedDraft.LengthM.HasValue || SelectedDraft.LengthM.Value <= 0)
-            {
-                _messageService.ShowWarning("원자재 배정 전에 사용 M수를 입력하세요.");
-                return;
-            }
-
-            var dialogViewModel = new OutsourceRawMaterialAllocationWindowViewModel(
-                _apiClient,
-                _messageService,
-                SelectedDraft.LengthM.Value,
-                SelectedDraft.RawMaterialAllocations,
-                GetReservedRawMaterialQty);
-
-            RequestOpenRawMaterialAllocation?.Invoke(
-                new RawMaterialAllocationDialogContext(SelectedDraft, dialogViewModel));
-        }
-
-        public void ApplyRawMaterialAllocationDialog(RawMaterialAllocationDialogContext context)
-        {
-            context.Draft.ReplaceRawMaterialAllocations(context.ViewModel.AppliedAllocations);
-            context.Draft.FabricLotNo = string.Join(", ", context.Draft.RawMaterialAllocations.Select(x => x.LotNo).Distinct());
-        }
-
-        private decimal GetReservedRawMaterialQty(long rawMaterialInventoryLotId)
-        {
-            return Drafts
-                .SelectMany(x => x.RawMaterialAllocations)
-                .Where(x => x.RawMaterialInventoryLotId == rawMaterialInventoryLotId)
-                .Sum(x => x.Qty);
         }
 
         private async Task UploadFileAsync()
@@ -337,18 +293,6 @@ namespace Mes.Wpf.Modules.OutsourceWorkInstructions.ViewModels
                 if (draft.SheetQty <= 0)
                 {
                     _messageService.ShowWarning($"원단 m수 또는 판 길이를 확인하세요. 계산된 장수가 없습니다.\nLOT: {draft.LotSummary}");
-                    return;
-                }
-
-                if (draft.RawMaterialAllocations.Count == 0)
-                {
-                    _messageService.ShowWarning($"원자재 배정이 필요합니다.\nLOT: {draft.LotSummary}");
-                    return;
-                }
-
-                if (draft.AllocatedRawMaterialQty != draft.LengthM.Value)
-                {
-                    _messageService.ShowWarning($"원자재 배정수량 합계가 사용 M수와 일치해야 합니다.\nLOT: {draft.LotSummary}");
                     return;
                 }
 
@@ -471,9 +415,6 @@ namespace Mes.Wpf.Modules.OutsourceWorkInstructions.ViewModels
                     ? null
                     : draft.Memo.Trim()
             };
-
-            group.RawMaterialAllocations.AddRange(
-                draft.RawMaterialAllocations.Select(x => x.ToRequest()));
 
             foreach (var lot in draft.Lots)
             {

@@ -1,45 +1,12 @@
-using Mes.Wpf.Modules.OutsourceWorkInstructions.ViewModels;
-using System.Windows;
 using System.Windows.Controls;
 
 namespace Mes.Wpf.Modules.OutsourceWorkInstructions.Views
 {
     public partial class OutsourceWorkInstructionPage : UserControl
     {
-        private OutsourceWorkInstructionPageViewModel? _viewModel;
-
         public OutsourceWorkInstructionPage()
         {
             InitializeComponent();
-            DataContextChanged += OutsourceWorkInstructionPage_DataContextChanged;
-        }
-
-        private void OutsourceWorkInstructionPage_DataContextChanged(object sender, DependencyPropertyChangedEventArgs e)
-        {
-            if (_viewModel != null)
-            {
-                _viewModel.RequestOpenRawMaterialAllocation -= OpenRawMaterialAllocationWindow;
-            }
-
-            _viewModel = e.NewValue as OutsourceWorkInstructionPageViewModel;
-
-            if (_viewModel != null)
-            {
-                _viewModel.RequestOpenRawMaterialAllocation += OpenRawMaterialAllocationWindow;
-            }
-        }
-
-        private void OpenRawMaterialAllocationWindow(RawMaterialAllocationDialogContext context)
-        {
-            var window = new OutsourceRawMaterialAllocationWindow(context.ViewModel)
-            {
-                Owner = Window.GetWindow(this)
-            };
-
-            if (window.ShowDialog() == true)
-            {
-                _viewModel?.ApplyRawMaterialAllocationDialog(context);
-            }
         }
     }
 }

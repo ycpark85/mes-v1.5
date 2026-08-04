@@ -275,7 +275,8 @@ namespace Mes.Wpf.Modules.InspectionSchedules.ViewModels
             var windowVm = new InspectionResultWindowViewModel(
                 _apiClient,
                 _messageService,
-                _canWriteInspection);
+                canEdit: false,
+                canRequestEdit: _canWriteInspection);
             await windowVm.InitializeAsync(
                 SelectedItem.InspectionScheduleId,
                 SelectedItem.LotNo,

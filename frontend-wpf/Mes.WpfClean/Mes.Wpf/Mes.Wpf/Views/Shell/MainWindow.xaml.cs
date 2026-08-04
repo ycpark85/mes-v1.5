@@ -36,8 +36,6 @@ using Mes.Wpf.Modules.Products.ViewModels;
 using Mes.Wpf.Modules.Products.Views;
 using Mes.Wpf.Modules.ProductionDaily.ViewModels;
 using Mes.Wpf.Modules.ProductionDaily.Views;
-using Mes.Wpf.Modules.RawMaterials.ViewModels;
-using Mes.Wpf.Modules.RawMaterials.Views;
 using Mes.Wpf.Modules.Roles.ViewModels;
 using Mes.Wpf.Modules.Roles.Views;
 using Mes.Wpf.Modules.RoutingTemplates.ViewModels;
@@ -404,21 +402,6 @@ namespace Mes.Wpf.Views.Shell
             await productViewModel.InitializeAsync();
         }
 
-        private async void RawMaterialMaster_Click(object sender, RoutedEventArgs e)
-        {
-            var page = new RawMaterialMasterPage();
-            var viewModel = new RawMaterialMasterPageViewModel(_apiClient, _messageService);
-
-            page.DataContext = viewModel;
-            MainContent.Content = page;
-            MainContent.Visibility = Visibility.Visible;
-
-            HeaderTitle.Text = "원자재 기준정보";
-            HeaderSubtitle.Text = "원자재 품목 / 원자재 보관 위치 등록 및 관리";
-
-            await viewModel.InitializeAsync();
-        }
-
         private async void OrderLineCreate_Click(object sender, RoutedEventArgs e)
         {
             var page = new OrderLineCreatePage();
@@ -780,21 +763,6 @@ namespace Mes.Wpf.Views.Shell
             await viewModel.InitializeAsync();
         }
 
-        private async void RawMaterialInventory_Click(object sender, RoutedEventArgs e)
-        {
-            var page = new RawMaterialInventoryPage();
-            var viewModel = new RawMaterialInventoryPageViewModel(_apiClient, _messageService);
-
-            page.DataContext = viewModel;
-            MainContent.Content = page;
-            MainContent.Visibility = Visibility.Visible;
-
-            HeaderTitle.Text = "원자재 재고관리";
-            HeaderSubtitle.Text = "원자재 LOT별 현재고 / 입고 / 위치이동 / 조정 / 수불이력";
-
-            await viewModel.InitializeAsync();
-        }
-
         private async void Shipment_Click(object sender, RoutedEventArgs e)
         {
             var page = new ShipmentPage();
@@ -966,7 +934,6 @@ namespace Mes.Wpf.Views.Shell
             SetMenuVisibility(DrawingMenuButton, PermissionCodes.DrawingsView);
             SetMenuVisibility(PendingNewDrawingMenuButton, PermissionCodes.DrawingsView);
             SetMenuVisibility(ProductMenuButton, PermissionCodes.ProductsView);
-            SetMenuVisibility(RawMaterialMasterMenuButton, PermissionCodes.RawMaterialsView);
 
             SetMenuVisibility(OrderLineCreateMenuButton, PermissionCodes.OrderLineCreateView);
             SetMenuVisibility(OrderLineListMenuButton, PermissionCodes.OrderLineListView);
@@ -988,7 +955,6 @@ namespace Mes.Wpf.Views.Shell
             SetMenuVisibility(ProductMonitoringMenuButton, PermissionCodes.ProductMonitoringView);
             SetMenuVisibility(OutsourceProcessingCostMenuButton, PermissionCodes.OutsourceProcessingCostsView);
             SetMenuVisibility(InventoryMenuButton, PermissionCodes.InventoriesView);
-            SetMenuVisibility(RawMaterialInventoryMenuButton, PermissionCodes.RawMaterialInventoriesView);
             ShipmentMenuButton.Visibility = Visibility.Collapsed;
 
             SetMenuVisibility(UserManagementMenuButton, PermissionCodes.UsersView);

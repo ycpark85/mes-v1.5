@@ -8,7 +8,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.core.time import utc_now
+from app.core.time import KOREA_TIME_ZONE, UTC, utc_now
 from app.models.defect_type import DefectType
 from app.models.inspection_defect import InspectionDefect
 from app.models.inspection_defect_attachment import InspectionDefectAttachment
@@ -23,7 +23,9 @@ from app.models.product_inventory_lot import ProductInventoryLot
 from app.models.product_inventory_movement import ProductInventoryMovement
 from app.models.shipment_line import ShipmentLine
 from app.services.inventory_fifo_service import allocate_inventory_lots_fifo
-from app.services.lot_status import derive_lot_status_from_inspection_statuses
+from app.services.inspection_schedule_service import (
+    sync_lot_status_from_inspection_schedules,
+)
 from app.services.production_daily_query import (
     refresh_order_line_snapshots_for_lots,
     refresh_order_line_snapshots_for_product,
@@ -32,6 +34,18 @@ from app.services.production_daily_query import (
 
 def _utcnow() -> datetime:
     return utc_now()
+
+
+def _normalize_concurrency_timestamp(value: datetime) -> datetime:
+    if value.tzinfo is None or value.utcoffset() is None:
+        value = value.replace(tzinfo=KOREA_TIME_ZONE)
+    return value.astimezone(UTC)
+
+
+def _timestamps_match(current: datetime, expected: datetime) -> bool:
+    return _normalize_concurrency_timestamp(current) == _normalize_concurrency_timestamp(
+        expected
+    )
 
 
 def _get_prior_result_totals(
@@ -93,6 +107,7 @@ def upsert_inspection_result(
     memo: Optional[str],
     defects: Sequence[DefectLineIn],
     actor: str,
+    expected_updated_at: Optional[datetime] = None,
 ) -> tuple[InspectionResult, str, Optional[int]]:
     """
     - schedule.status == IN_PROGRESS 에서만 허용
@@ -122,12 +137,28 @@ def upsert_inspection_result(
     if sch.status == "DONE" and result is None:
         raise HTTPException(status_code=409, detail="DONE schedule result not found")
 
+    if (
+        result is not None
+        and expected_updated_at is not None
+        and not _timestamps_match(result.updated_at, expected_updated_at)
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail="Inspection result was modified by another user. Reload and try again.",
+        )
+
     if sch.status == "DONE" and is_partial:
         raise HTTPException(status_code=409, detail="DONE schedule cannot be changed to partial inspection")
 
     if is_partial:
         if not next_inspection_date:
             raise HTTPException(status_code=422, detail="next_inspection_date is required when is_partial=true")
+        partial_reason = (partial_reason or "").strip()
+        if not partial_reason:
+            raise HTTPException(
+                status_code=422,
+                detail="partial_reason is required when is_partial=true",
+            )
         stock_ship_qty = 0
         result_ship_qty = 0
         stock_in_qty = 0
@@ -135,6 +166,7 @@ def upsert_inspection_result(
         uninspected_qty = 0
     else:
         next_inspection_date = None
+        partial_reason = None
 
     inspected_qty = good_qty + defect_ship_qty + defect_qty
     sellable_qty = good_qty + defect_ship_qty
@@ -226,13 +258,13 @@ def upsert_inspection_result(
             received_at=base_received_at,
         )
         db.flush()
-        _sync_lot_status_from_inspection_schedules(db, lot_id=sch.lot_id)
+        sync_lot_status_from_inspection_schedules(db, lot_id=sch.lot_id)
     else:
         sch.status = "DONE"
         sch.finished_at = now
         db.flush()
 
-        _sync_lot_status_from_inspection_schedules(db, lot_id=sch.lot_id)
+        sync_lot_status_from_inspection_schedules(db, lot_id=sch.lot_id)
 
         _apply_inventory_for_result(
             db=db,
@@ -349,64 +381,6 @@ def _create_next_schedule(
 
     return new_sch.inspection_schedule_id
 
-
-def _sync_order_line_status_from_lot(db: Session, *, lot: Lot) -> None:
-    exists_not_done_lot = db.execute(
-        select(Lot.lot_id)
-        .where(
-            Lot.order_line_id == lot.order_line_id,
-            Lot.status != "CANCELED",
-            Lot.status != "DONE",
-        )
-        .limit(1)
-    ).scalar_one_or_none()
-
-    if exists_not_done_lot is not None:
-        return
-
-    order_line = db.get(OrderLine, lot.order_line_id)
-
-    if not order_line or order_line.status == "CANCELED":
-        return
-
-    order_line.status = "DONE"
-    db.flush()
-
-
-def _sync_lot_status_from_inspection_schedules(
-    db: Session,
-    *,
-    lot_id: int,
-) -> None:
-    lot = db.get(Lot, lot_id)
-    if not lot:
-        return
-
-    statuses = (
-        db.execute(
-            select(InspectionSchedule.status)
-            .where(
-                InspectionSchedule.lot_id == lot_id,
-                InspectionSchedule.status != "CANCELED",
-            )
-        )
-        .scalars()
-        .all()
-    )
-
-    if not statuses:
-        return
-
-    next_status = derive_lot_status_from_inspection_statuses(statuses)
-
-    if next_status is None:
-        return
-
-    lot.status = next_status
-    db.flush()
-
-    if next_status == "DONE":
-        _sync_order_line_status_from_lot(db, lot=lot)
 
 def _get_fifo_stock_lot_allocations(
     db: Session,

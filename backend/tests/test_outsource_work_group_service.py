@@ -85,7 +85,6 @@ class OutsourceWorkGroupServiceTests(unittest.TestCase):
             sheet_cut_count=3,
             fabric_lot_no=" FAB-001 ",
             remark=" updated ",
-            raw_material_allocations=[],
             reason="adjust qty",
         )
 

@@ -21,6 +21,7 @@ from app.schemas.inspection_result import (
     InspectionResultGetOut,
     InspectionResultListItemOut,
     InspectionResultListOut,
+    InspectionRoundSummaryOut,
 )
 from app.services.inventory_fifo_service import get_available_inventory_lots_fifo
 from app.services.order_line_plan_service import (
@@ -240,6 +241,32 @@ def list_inspection_results_for_grid(
     page: int = 1,
     size: int = 100,
 ) -> InspectionResultListOut:
+    inspection_round_sq = (
+        select(
+            InspectionSchedule.inspection_schedule_id.label("inspection_schedule_id"),
+            func.row_number()
+            .over(
+                partition_by=InspectionSchedule.lot_id,
+                order_by=(
+                    InspectionSchedule.inspection_date.asc(),
+                    InspectionSchedule.inspection_schedule_id.asc(),
+                ),
+            )
+            .label("inspection_round"),
+            func.count()
+            .over(partition_by=InspectionSchedule.lot_id)
+            .label("inspection_round_count"),
+        )
+        .select_from(InspectionSchedule)
+        .join(
+            InspectionResult,
+            InspectionResult.inspection_schedule_id
+            == InspectionSchedule.inspection_schedule_id,
+        )
+        .where(InspectionSchedule.status.in_(("PARTIAL_DONE", "DONE")))
+        .subquery()
+    )
+
     result_ship_sq = (
         select(
             ShipmentLine.inspection_result_id.label("inspection_result_id"),
@@ -273,6 +300,12 @@ def list_inspection_results_for_grid(
             Lot.lot_id,
             Lot.lot_no,
             InspectionSchedule.inspection_date,
+            InspectionSchedule.status.label("schedule_status"),
+            inspection_round_sq.c.inspection_round,
+            inspection_round_sq.c.inspection_round_count,
+            InspectionResult.is_partial,
+            InspectionResult.next_inspection_date,
+            InspectionResult.partial_reason,
             OrderLine.due_date,
             Partner.name.label("partner_name"),
             Product.product_code,
@@ -300,6 +333,11 @@ def list_inspection_results_for_grid(
             InspectionSchedule.inspection_schedule_id == InspectionResult.inspection_schedule_id,
         )
         .join(Lot, Lot.lot_id == InspectionSchedule.lot_id)
+        .join(
+            inspection_round_sq,
+            inspection_round_sq.c.inspection_schedule_id
+            == InspectionSchedule.inspection_schedule_id,
+        )
         .join(OrderLine, OrderLine.order_line_id == Lot.order_line_id)
         .join(Partner, Partner.partner_id == OrderLine.partner_id)
         .join(Product, Product.product_id == Lot.product_id)
@@ -311,7 +349,7 @@ def list_inspection_results_for_grid(
             inventory_in_sq,
             inventory_in_sq.c.inspection_result_id == InspectionResult.inspection_result_id,
         )
-        .where(InspectionSchedule.status == "DONE")
+        .where(InspectionSchedule.status.in_(("PARTIAL_DONE", "DONE")))
     )
 
     if date_from is not None:
@@ -374,6 +412,12 @@ def list_inspection_results_for_grid(
                 lot_id=int(row["lot_id"]),
                 lot_no=str(row["lot_no"] or ""),
                 inspection_date=row["inspection_date"],
+                schedule_status=str(row["schedule_status"]),
+                inspection_round=int(row["inspection_round"] or 0),
+                inspection_round_count=int(row["inspection_round_count"] or 0),
+                is_partial=bool(row["is_partial"]),
+                next_inspection_date=row["next_inspection_date"],
+                partial_reason=row["partial_reason"],
                 due_date=row["due_date"],
                 partner_name=str(row["partner_name"] or ""),
                 product_code=str(row["product_code"] or ""),
@@ -411,7 +455,7 @@ def get_inspection_result_detail(
     db: Session,
     inspection_schedule_id: int,
 ) -> InspectionResultGetOut:
-    ensure_inspection_schedule(db, inspection_schedule_id)
+    schedule = ensure_inspection_schedule(db, inspection_schedule_id)
 
     result = db.execute(
         select(InspectionResult).where(
@@ -430,8 +474,71 @@ def get_inspection_result_detail(
         current_result_id=result.inspection_result_id if result else None,
     )
 
+    rounds = _get_inspection_rounds(db, lot_id=schedule.lot_id)
+    inspection_round = next(
+        (
+            row.inspection_round
+            for row in rounds
+            if row.inspection_schedule_id == inspection_schedule_id
+        ),
+        0,
+    )
+
     return InspectionResultGetOut(
         result=result,
+        schedule_status=schedule.status,
+        inspection_round=inspection_round,
+        inspection_round_count=len(rounds),
+        rounds=rounds,
         accumulated=accumulated,
         inventory=inventory,
     )
+
+
+def _get_inspection_rounds(
+    db: Session,
+    *,
+    lot_id: int,
+) -> list[InspectionRoundSummaryOut]:
+    rows = (
+        db.execute(
+            select(InspectionSchedule, InspectionResult)
+            .join(
+                InspectionResult,
+                InspectionResult.inspection_schedule_id
+                == InspectionSchedule.inspection_schedule_id,
+            )
+            .where(
+                InspectionSchedule.lot_id == lot_id,
+                InspectionSchedule.status.in_(("PARTIAL_DONE", "DONE")),
+            )
+            .order_by(
+                InspectionSchedule.inspection_date.asc(),
+                InspectionSchedule.inspection_schedule_id.asc(),
+            )
+        )
+        .all()
+    )
+
+    return [
+        InspectionRoundSummaryOut(
+            inspection_result_id=result.inspection_result_id,
+            inspection_schedule_id=schedule.inspection_schedule_id,
+            inspection_date=schedule.inspection_date,
+            schedule_status=schedule.status,
+            inspection_round=index,
+            is_partial=result.is_partial,
+            next_inspection_date=result.next_inspection_date,
+            partial_reason=result.partial_reason,
+            good_qty=int(result.good_qty or 0),
+            defect_ship_qty=int(result.defect_ship_qty or 0),
+            defect_qty=int(result.defect_qty or 0),
+            inspected_qty=int(result.inspected_qty or 0),
+            uninspected_qty=int(result.uninspected_qty or 0),
+            received_qty=int(result.received_qty or 0),
+            memo=result.memo,
+            created_by=result.created_by,
+            created_at=result.created_at,
+        )
+        for index, (schedule, result) in enumerate(rows, start=1)
+    ]

@@ -38,6 +38,7 @@ class InspectionResultUpsertIn(BaseModel):
     next_inspection_date: Optional[date] = None
     partial_reason: Optional[str] = None
     memo: Optional[str] = None
+    expected_updated_at: Optional[datetime] = None
 
     defects: List[DefectLineIn] = Field(default_factory=list)
 
@@ -86,6 +87,7 @@ class InspectionResultOut(BaseModel):
     is_partial: bool
     next_inspection_date: Optional[date] = None
     partial_reason: Optional[str] = None
+    memo: Optional[str] = None
     created_by: Optional[str] = None
     created_at: datetime
     updated_at: datetime
@@ -125,6 +127,10 @@ class InspectionInventorySummaryOut(BaseModel):
 
 class InspectionResultGetOut(BaseModel):
     result: Optional[InspectionResultOut] = None
+    schedule_status: Optional[str] = None
+    inspection_round: int = 0
+    inspection_round_count: int = 0
+    rounds: List["InspectionRoundSummaryOut"] = Field(default_factory=list)
     accumulated: InspectionAccumulatedSummaryOut = Field(default_factory=InspectionAccumulatedSummaryOut)
     inventory: InspectionInventorySummaryOut | None = None
 
@@ -141,6 +147,12 @@ class InspectionResultListItemOut(BaseModel):
     lot_id: int
     lot_no: str
     inspection_date: date
+    schedule_status: str
+    inspection_round: int
+    inspection_round_count: int
+    is_partial: bool
+    next_inspection_date: Optional[date] = None
+    partial_reason: Optional[str] = None
     due_date: date
     partner_name: str
     product_code: str
@@ -158,6 +170,26 @@ class InspectionResultListItemOut(BaseModel):
     created_at: datetime
     updated_at: datetime
     memo: Optional[str] = None
+
+
+class InspectionRoundSummaryOut(BaseModel):
+    inspection_result_id: int
+    inspection_schedule_id: int
+    inspection_date: date
+    schedule_status: str
+    inspection_round: int
+    is_partial: bool
+    next_inspection_date: Optional[date] = None
+    partial_reason: Optional[str] = None
+    good_qty: int = 0
+    defect_ship_qty: int = 0
+    defect_qty: int = 0
+    inspected_qty: int = 0
+    uninspected_qty: int = 0
+    received_qty: int = 0
+    memo: Optional[str] = None
+    created_by: Optional[str] = None
+    created_at: datetime
 
 
 class InspectionResultListOut(BaseModel):

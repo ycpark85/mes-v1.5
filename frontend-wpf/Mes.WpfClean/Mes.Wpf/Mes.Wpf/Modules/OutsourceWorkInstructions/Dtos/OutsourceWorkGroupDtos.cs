@@ -69,12 +69,6 @@ namespace Mes.Wpf.Modules.OutsourceWorkInstructions.Dtos
         [JsonPropertyName("fabric_lot_no")]
         public string? FabricLotNo { get; set; }
 
-        [JsonPropertyName("raw_material_qty")]
-        public decimal RawMaterialQty { get; set; }
-
-        [JsonPropertyName("raw_material_lot_nos_text")]
-        public string RawMaterialLotNosText { get; set; } = string.Empty;
-
         [JsonPropertyName("can_cancel")]
         public bool CanCancel { get; set; }
 
@@ -97,9 +91,6 @@ namespace Mes.Wpf.Modules.OutsourceWorkInstructions.Dtos
     {
         [JsonPropertyName("lots")]
         public List<OutsourceWorkGroupLotDto> Lots { get; set; } = new();
-
-        [JsonPropertyName("raw_material_allocations")]
-        public List<OutsourceWorkGroupRawMaterialAllocationDto> RawMaterialAllocations { get; set; } = new();
 
         [JsonPropertyName("files")]
         public List<OutsourceWorkInstructionFileDto> Files { get; set; } = new();
@@ -132,42 +123,6 @@ namespace Mes.Wpf.Modules.OutsourceWorkInstructions.Dtos
         public int? ExpectedOutputQty { get; set; }
     }
 
-    public sealed class OutsourceWorkGroupRawMaterialAllocationDto
-    {
-        [JsonPropertyName("raw_material_id")]
-        public long RawMaterialId { get; set; }
-
-        [JsonPropertyName("raw_material_location_id")]
-        public long RawMaterialLocationId { get; set; }
-
-        [JsonPropertyName("raw_material_inventory_lot_id")]
-        public long? RawMaterialInventoryLotId { get; set; }
-
-        [JsonPropertyName("material_code")]
-        public string? MaterialCode { get; set; }
-
-        [JsonPropertyName("material_name")]
-        public string? MaterialName { get; set; }
-
-        [JsonPropertyName("location_name")]
-        public string? LocationName { get; set; }
-
-        [JsonPropertyName("lot_no")]
-        public string LotNo { get; set; } = string.Empty;
-
-        [JsonPropertyName("qty")]
-        public decimal Qty { get; set; }
-
-        [JsonPropertyName("unit_cost_snapshot")]
-        public decimal? UnitCostSnapshot { get; set; }
-
-        [JsonPropertyName("amount_snapshot")]
-        public decimal? AmountSnapshot { get; set; }
-
-        [JsonPropertyName("status")]
-        public string Status { get; set; } = string.Empty;
-    }
-
     public sealed class OutsourceWorkGroupCancelRequest
     {
         [JsonPropertyName("reason")]
@@ -190,9 +145,6 @@ namespace Mes.Wpf.Modules.OutsourceWorkInstructions.Dtos
 
         [JsonPropertyName("remark")]
         public string? Remark { get; set; }
-
-        [JsonPropertyName("raw_material_allocations")]
-        public List<OutsourceWorkInstructionRawMaterialAllocationCreateRequest> RawMaterialAllocations { get; set; } = new();
 
         [JsonPropertyName("reason")]
         public string Reason { get; set; } = string.Empty;

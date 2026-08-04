@@ -79,7 +79,7 @@ The login audit table `auth_audit_logs` uses the same User-Agent columns and nor
 
 ## Raw Material Inventory Tables
 
-Raw materials are modeled separately from products so product inventory and raw material inventory can evolve independently.
+These tables remain in the MES v1.5 schema for non-destructive compatibility, but the MES v1.5 runtime does not expose raw-material master, inventory, movement, or outsource-allocation workflows. The tables were confirmed empty when the feature was removed. Their columns and constraints are documented below as preserved schema, not as active application behavior.
 
 ### `raw_material`
 
@@ -134,7 +134,7 @@ Movement types:
 - `CONSUME_OUT`
 - `CONSUME_REVERSE`
 
-Stage 1 uses inbound, transfer, and adjustment. Stage 2 uses `CONSUME_OUT` when an outsource work instruction is saved with raw material allocations. `CONSUME_REVERSE` is used when a registered outsource work instruction is updated or canceled.
+The movement types remain allowed by the preserved schema. Active MES v1.5 workflows do not create these movements.
 
 Important columns:
 
@@ -202,15 +202,10 @@ Important columns:
 - `outsource_work_group_id`: updated work group.
 - `action_type`: currently `UPDATE`.
 - `reason`: required user-entered update reason.
-- `before_data`, `after_data`: JSONB snapshots of editable group fields, group items, and active raw material allocations.
+- `before_data`, `after_data`: JSONB snapshots of editable group fields and group items.
 - `created_at`, `created_by`: audit metadata.
 
-Raw material allocation updates are ledger-based:
-
-- Existing consumed allocation rows are marked `REVERSED`.
-- Opposite `CONSUME_REVERSE` movement rows restore stock.
-- New allocation rows and `CONSUME_OUT` movement rows are created for the updated allocation set.
-- Work LOT composition, process type, and partner changes remain cancel-and-recreate flows in the first update scope.
+Work LOT composition, process type, and partner changes remain cancel-and-recreate flows. Raw-material allocation is not part of the MES v1.5 update contract.
 
 ## Production Progress Snapshot Read Model
 

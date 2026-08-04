@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from datetime import date
-from decimal import Decimal
 
 from fastapi import HTTPException
 from sqlalchemy import func, select
@@ -15,17 +14,12 @@ from app.models.outsource_purchase_order_group import OutsourcePurchaseOrderGrou
 from app.models.outsource_purchase_order_item import OutsourcePurchaseOrderItem
 from app.models.outsource_work_group import OutsourceWorkGroup
 from app.models.outsource_work_group_item import OutsourceWorkGroupItem
-from app.models.outsource_work_group_raw_material_allocation import (
-    OutsourceWorkGroupRawMaterialAllocation,
-)
 from app.models.outsource_work_instruction import OutsourceWorkInstruction
 from app.models.outsource_work_instruction_file import OutsourceWorkInstructionFile
 from app.models.outsource_work_instruction_item import OutsourceWorkInstructionItem
 from app.models.partner import Partner
 from app.models.product import Product
 from app.models.product_inventory import ProductInventory
-from app.models.raw_material import RawMaterial
-from app.models.raw_material_location import RawMaterialLocation
 from app.models.routing_template import RoutingTemplate
 from app.schemas.outsource_work_instruction import (
     OutsourceWorkInstructionCandidateLotListOut,
@@ -36,7 +30,6 @@ from app.schemas.outsource_work_instruction import (
     OutsourceWorkGroupListItemOut,
     OutsourceWorkGroupListOut,
     OutsourceWorkGroupLotOut,
-    OutsourceWorkGroupRawMaterialAllocationOut,
     OutsourceWorkInstructionFileOut,
 )
 from app.services.routing_policy import get_available_process_types
@@ -308,7 +301,7 @@ def list_work_groups(
     details = [build_work_group_detail(db, work_group) for work_group in rows]
     items = [
         OutsourceWorkGroupListItemOut(
-            **detail.model_dump(exclude={"lots", "raw_material_allocations", "files"})
+            **detail.model_dump(exclude={"lots", "files"})
         )
         for detail in details
     ]
@@ -515,32 +508,6 @@ def build_work_group_detail(
         .all()
     )
 
-    allocation_rows = (
-        db.execute(
-            select(
-                OutsourceWorkGroupRawMaterialAllocation,
-                RawMaterial,
-                RawMaterialLocation,
-            )
-            .join(
-                RawMaterial,
-                RawMaterial.raw_material_id
-                == OutsourceWorkGroupRawMaterialAllocation.raw_material_id,
-            )
-            .join(
-                RawMaterialLocation,
-                RawMaterialLocation.raw_material_location_id
-                == OutsourceWorkGroupRawMaterialAllocation.raw_material_location_id,
-            )
-            .where(
-                OutsourceWorkGroupRawMaterialAllocation.outsource_work_group_id
-                == work_group.outsource_work_group_id
-            )
-            .order_by(OutsourceWorkGroupRawMaterialAllocation.created_at.asc())
-        )
-        .all()
-    )
-
     file_rows = (
         db.execute(
             select(OutsourceWorkInstructionFile)
@@ -583,32 +550,6 @@ def build_work_group_detail(
             )
         )
 
-    raw_material_outputs: list[OutsourceWorkGroupRawMaterialAllocationOut] = []
-    raw_material_qty = Decimal("0")
-    raw_material_lot_nos: list[str] = []
-
-    for allocation, material, location in allocation_rows:
-        if allocation.status == "CONSUMED":
-            raw_material_qty += Decimal(allocation.qty or 0)
-            raw_material_lot_nos.append(allocation.lot_no)
-        raw_material_outputs.append(
-            OutsourceWorkGroupRawMaterialAllocationOut(
-                outsource_work_group_raw_material_allocation_id=allocation.outsource_work_group_raw_material_allocation_id,
-                raw_material_id=allocation.raw_material_id,
-                raw_material_location_id=allocation.raw_material_location_id,
-                raw_material_inventory_lot_id=allocation.raw_material_inventory_lot_id,
-                material_code=material.material_code,
-                material_name=material.material_name,
-                location_name=location.location_name,
-                lot_no=allocation.lot_no,
-                qty=allocation.qty,
-                unit_cost_snapshot=allocation.unit_cost_snapshot,
-                amount_snapshot=allocation.amount_snapshot,
-                status=allocation.status,
-                created_at=allocation.created_at,
-            )
-        )
-
     cancel_block_reason = get_cancel_block_reason(db, work_group)
     update_block_reason = get_update_block_reason(db, work_group)
 
@@ -633,8 +574,6 @@ def build_work_group_detail(
         length_m=work_group.length_m,
         sheet_cut_count=work_group.sheet_cut_count,
         fabric_lot_no=work_group.fabric_lot_no,
-        raw_material_qty=_q2(raw_material_qty),
-        raw_material_lot_nos_text=", ".join(dict.fromkeys(raw_material_lot_nos)),
         can_cancel=cancel_block_reason is None,
         cancel_block_reason=cancel_block_reason,
         can_update=update_block_reason is None,
@@ -642,13 +581,8 @@ def build_work_group_detail(
         memo=work_group.remark or instruction.memo,
         created_at=work_group.created_at,
         lots=lot_outputs,
-        raw_material_allocations=raw_material_outputs,
         files=[
             OutsourceWorkInstructionFileOut.model_validate(file_row, from_attributes=True)
             for file_row in file_rows
         ],
     )
-
-
-def _q2(value: Decimal | int | float | str | None) -> Decimal:
-    return Decimal(value or 0).quantize(Decimal("0.01"))

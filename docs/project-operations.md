@@ -70,67 +70,24 @@ Vendor account maintenance:
 
 Detailed plan: `docs/vendor-portal-external-access-plan.md`.
 
-## Raw Material Inventory Management
+## Raw Material Inventory Management (Inactive in MES v1.5)
 
-Raw material inventory is managed separately from product inventory.
-
-- Product items remain in `product`.
-- Raw material items are managed in `raw_material`.
-- Raw material stock is tracked by raw material, location, and raw material LOT.
-- Raw material locations are user-configurable and are not hard-coded to a specific warehouse or outsource vendor.
-- A raw material location can represent an internal warehouse, an outsource vendor holding location, or another controlled location.
-- Outsource-vendor locations can be linked to `partner` through `partner_id`.
-- Raw material location codes are system-generated when the user creates a location without entering a code.
-- In the WPF raw material master, users select a partner by searching partner name; the selected partner name is copied to the location name by default while the internal `partner_id` is stored separately.
-
-Raw material inventory quantity rules:
-
-- Physical raw material stock is stored at `raw_material_inventory.current_qty` by material and location.
-- LOT-level stock is stored at `raw_material_inventory_lot.current_qty`.
-- Inbound, transfer, adjustment, and outsource consumption are recorded in `raw_material_inventory_movement`.
-- Transfers create paired `TRANSFER_OUT` and `TRANSFER_IN` movement rows with the same `transfer_key`.
-- Inventory movement rows are not overwritten for correction. Correction, cancel, and registered-work-instruction update flows use opposite movements such as `CONSUME_REVERSE` or adjustment movements.
-- Raw material movement history should be reviewed primarily by raw material and LOT number, not only by the internal inventory-lot row id, because a transfer can create or update separate location-level LOT rows for the same physical raw material LOT.
-- Movement history includes the original `INBOUND` row, later `TRANSFER_OUT` and `TRANSFER_IN` rows, adjustment rows, and outsource consumption rows when queried by raw material and LOT number.
-
-Stage 1 scope:
-
-- Raw material item management.
-- Raw material location management.
-- Raw material LOT inventory inquiry.
-- Raw material inbound.
-- Raw material location transfer.
-- Raw material LOT adjustment.
-- Raw material movement history.
-
-Stage 2 scope:
-
-- Outsource work instruction raw material allocation.
-- The WPF outsource work instruction detail panel keeps the existing layout and adds a raw-material allocation button and allocation summary/list.
-- Before saving, allocation rows are held only in the screen state and are used as temporary reservations so another draft in the same batch cannot reuse the same available quantity.
-- On final outsource work instruction save, raw material LOT stock and material-location stock are reduced in the same database transaction.
-- Final save creates `CONSUME_OUT` rows in `raw_material_inventory_movement` and stores allocation snapshots in `outsource_work_group_raw_material_allocation`.
-
-Raw material management refactor closure:
-
-- Raw material API routing is kept thin. The router handles request parameters, response models, and transaction boundaries, while business and query rules live in service modules.
-- `raw_material_query.py` owns raw material list, location list, LOT inventory list, and movement-history list queries.
-- `raw_material_inventory_service.py` owns inbound, location transfer, and adjustment rules, including material-location stock, LOT stock, paired transfer movements, and movement amount snapshots.
-- `raw_material_master_service.py` owns raw material item and location create/update/deactivate rules, including code normalization, location-type validation, partner validation, and blocking deactivation when stock remains.
-- Manual WPF screen checks were completed for raw material master and inventory flows after the refactor.
-- No database schema change was made for this refactor, so the raw material DB architecture remains unchanged.
+- The raw-material master and inventory menus, WPF pages, API routes, schemas, and application services are not part of the MES v1.5 runtime scope.
+- Raw-material permission codes are no longer seeded, and `/api/v1/raw-materials/*` routes are not registered.
+- Outsource work instruction create, update, and cancel flows do not accept allocations and do not create raw-material inventory movements.
+- Existing raw-material and allocation tables, SQLAlchemy models, and Alembic history remain in place. This avoids a destructive migration and preserves compatibility evidence for later review.
+- At removal time, raw-material masters, inventory rows, inventory LOTs, outsource allocations, and related allocation movements were all confirmed as zero rows.
+- Purchase-order fields named `raw_material_text` or `raw_material_inbound_text` describe the existing cutting-order form's material specification text; they are not raw-material inventory allocation features.
 
 Outsource work instruction list, update, and cancel rules:
 
-- Outsource work instruction list is managed by `outsource_work_group`, because work grouping, raw material allocation, Bohyun outsource management, and later cost flows are group-based.
+- Outsource work instruction list is managed by `outsource_work_group`, because work grouping, Bohyun outsource management, and later cost flows are group-based.
 - Registered work groups can be updated only before vendor receipt and before a purchase order group is created.
-- The first update scope allows `sheet_qty`, `length_m`, `sheet_cut_count`, `fabric_lot_no`, `remark`, and raw material allocation changes. Work LOT composition, process type, and partner changes remain cancel-and-recreate flows.
+- The update scope allows `sheet_qty`, `length_m`, `sheet_cut_count`, `fabric_lot_no`, and `remark` changes. Work LOT composition, process type, and partner changes remain cancel-and-recreate flows.
 - Update reason is required. Each update writes before/after snapshots to `outsource_work_group_change_log`.
-- Updating raw material allocations does not overwrite existing movement rows. The system creates `CONSUME_REVERSE` rows for currently consumed allocations, marks those allocation rows `REVERSED`, then creates new `CONSUME_OUT` rows and consumed allocation snapshots.
 - A registered work group has `status IS NULL` and is displayed as `REGISTERED` or "지시등록".
 - Canceling a work group sets `outsource_work_group.status` to `CANCELED` and records `canceled_at` and `canceled_reason`.
-- Canceling does not delete the work instruction, work group, raw material allocation, or movement history.
-- Raw material consumption is reversed with `CONSUME_REVERSE` movement rows, and consumed allocation rows are marked `REVERSED`.
+- Canceling does not delete the work instruction or work group history.
 - The related active `outsource_work_instruction_item` rows are deactivated so the same LOT and process can be registered again.
 - Candidate LOT lookup excludes only active, non-canceled work groups. Therefore canceled work instructions allow their LOTs to appear again in the outsource-work-instruction candidate list.
 - Bohyun outsource management and purchase-order target lists exclude canceled work groups.
@@ -198,9 +155,7 @@ Out of current scope:
 
 Cost/closing preparation:
 
-- Raw material LOTs can store `unit_cost`.
-- Movement rows store unit-cost and amount snapshots.
-- These snapshots are retained so future WIP and closing features can calculate raw material inventory amount and raw-material component of WIP amount without depending on later master-data changes.
+- Raw-material cost and movement tables remain preserved schema only and are not populated by active MES v1.5 workflows.
 
 ## Outsource Work Group Representative Product
 
@@ -247,11 +202,16 @@ Internal official received quantity is calculated from inspection results:
 Inspection result management refactor notes:
 
 - Inspection-result list and detail read logic is separated into `inspection_result_query.py`.
-- The completed inspection-result list is paged with `page` and `size`. Its response summary fields are totals for the full filtered result, not only the current page.
-- `inspection_result_query.py` owns the completed-result list query, prior partial/done accumulated summary, and inventory/shipment summary shown in the inspection-result dialog.
+- The inspection-result list includes both `PARTIAL_DONE` and `DONE` result rows and is paged with `page` and `size`. Its response summary fields are totals for the full filtered result, not only the current page.
+- Each list/detail result exposes its LOT inspection round, total round count, split/final classification, next inspection date, and partial reason. The detail response also contains the chronological round summary for the LOT.
+- A split result requires both the next inspection date and a non-blank partial reason in the backend service; final-result saves clear split-only fields.
+- `inspection_result_query.py` owns the result list query, prior partial/done accumulated summary, round history, and inventory/shipment summary shown in the inspection-result dialog.
 - Defect photo upload/download file validation and storage-path resolution are separated into `inspection_result_attachment_service.py`.
 - The inspection-result router delegates list/detail read models to the query service and file handling to the attachment service.
 - Inspection-result save and settlement rules remain in `inspection_result_service.py`; this refactor step did not change inventory settlement, shipment waiting, defect-line saving, or attachment persistence behavior.
+- Inspection-result management opens completed results in a read-only detail window. Users with `INSPECTIONS.WRITE` can open a separate edit window; a successful save closes the edit window and reloads the detail and management list.
+- Result detail responses preserve result memo, defect quantity, defect disposition, and attachment identifiers. Stored defect images can be opened from both read-only and edit windows.
+- Completed-result updates send the previously loaded `updated_at` value. The backend rejects stale writes with HTTP 409 so one user cannot silently overwrite another user's change.
 - Inspection result management refactoring is considered closed when the router remains limited to request parsing, service delegation, transaction commit/rollback, and `FileResponse` construction.
 - Current WPF usage covers inspection-result list lookup, result detail lookup, photo upload, result save, stock-lot lookup, and LOT-detail attachment image opening.
 - Keep the attachment content API because LOT detail history can use stored inspection-defect attachment ids to open defect images.
@@ -390,12 +350,17 @@ Product history monitoring is a product-to-LOT trace view.
 - LOT management list status treats a LOT as `IN_PROGRESS` when it belongs to an active, non-canceled outsource work group, even if the stored `lot.status` is still `WAITING`.
 - Stored LOT status is limited to `WAITING`, `RECEIVED`, `IN_PROGRESS`, `PARTIAL_DONE`, `DONE`, and `CANCELED`; `CREATED` and `INSPECTION_DONE` are list display states only.
 - Historical `PARTIAL_DONE` inspection schedules do not block LOT completion; when the follow-up inspection is `DONE`, the stored LOT status becomes `DONE`.
+- Inspection schedule and inspection result flows share the same LOT status synchronization service. The split-to-final sequence is covered by an integration test that verifies `PARTIAL_DONE + DONE` completes both the LOT and, when all non-canceled LOTs are done, the order line.
 - The legacy `POST /api/v1/lot-steps/{id}/start` and `POST /api/v1/lot-steps/{id}/complete` manual process-control APIs were removed after confirming they are not used externally.
 - Current outsource process control must use outsource work instruction groups, Bohyun inbound/work-done/shipment status, inspection schedule receive/start, and inspection result registration instead of manual LOT-step start/complete.
 - Keep `lot_step` rows as routing/process snapshots for LOT creation, detail display, and not-started checks, but do not use the legacy LOT-step APIs as the operational progress source.
 - `lot_step` rows remain part of the routing snapshot and history model even though the manual transition API no longer exists.
 
 - LOT trace detail assembly is handled by `lot_trace_query.py`, including LOT basics, latest order planning snapshot, current product stock, outsource work history, inspection totals, defects, and defect attachment image URLs.
+- LOT trace detail also exposes chronological `timeline` events and `inspection_rounds`. Timeline events are assembled on the server from LOT creation/terminal status, outsource instruction/receipt/completion/shipment timestamps, and every inspection schedule/result so the client does not infer business history from display flags.
+- The WPF LOT detail window uses a timeline-first layout: fixed KPI summary, chronological event list, compact core information, outsource summary, all inspection rounds, and defect-image actions. Rework LOT creation events include the parent LOT and stored rework reason.
+- LOT-detail defect rows preserve their originating inspection result and expose inspection round, inspection date, and split/final classification. The WPF defect table orders rows by inspection round so defects from split and final inspections are not mixed into an unlabeled LOT-wide list.
+- The WPF LOT detail window shows the memo entered during inspection-result registration in a dedicated section below the defect table. Each completed inspection-result round remains visible even when its memo is blank, while pending schedules are excluded. Split reasons remain in the inspection-round table's final column and are not mixed into the result-memo section.
 - The LOT router should keep the trace-detail endpoint limited to request handling and service delegation.
 - Manual rework LOT creation through `POST /api/v1/lots` is handled by `lot_rework_service.py`.
 - Rework LOT creation requires a selected primary parent LOT in `DONE` or `CANCELED` status, creates routing steps from the product routing template, and changes a `DONE` order line back to `CLOSED` so rework can proceed.

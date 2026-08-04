@@ -21,7 +21,6 @@ from app.api.v1.outsource_processing_costs import router as outsource_processing
 from app.api.v1.production_daily import router as production_daily_router
 from app.api.v1.dashboard import router as dashboard_router
 from app.api.v1.inventories import router as inventory_router
-from app.api.v1.raw_materials import router as raw_material_router
 from app.api.v1.shipments import router as shipment_router
 from app.api.v1.vendor_portal import router as vendor_portal_router
 
@@ -224,24 +223,6 @@ router.include_router(
             require_method_any_permission(
                 read_permission_codes=("INVENTORIES.VIEW",),
                 write_permission_codes=("INVENTORIES.WRITE",),
-            )
-        )
-    ],
-)
-
-router.include_router(
-    raw_material_router,
-    dependencies=[
-        Depends(
-            require_method_any_permission(
-                read_permission_codes=(
-                    "RAW_MATERIALS.VIEW",
-                    "RAW_MATERIAL_INVENTORIES.VIEW",
-                ),
-                write_permission_codes=(
-                    "RAW_MATERIALS.WRITE",
-                    "RAW_MATERIAL_INVENTORIES.WRITE",
-                ),
             )
         )
     ],

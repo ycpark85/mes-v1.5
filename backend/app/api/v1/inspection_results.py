@@ -137,6 +137,7 @@ def put_result(
             memo=body.memo,
             defects=body.defects,
             actor=actor,
+            expected_updated_at=body.expected_updated_at,
         )
         db.commit()
         db.refresh(result)

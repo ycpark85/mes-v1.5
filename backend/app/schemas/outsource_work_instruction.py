@@ -18,12 +18,6 @@ class OutsourceWorkInstructionGroupItemCreate(BaseModel):
     remark: Optional[str] = None
 
 
-class OutsourceWorkInstructionRawMaterialAllocationCreate(BaseModel):
-    raw_material_inventory_lot_id: int
-    qty: Decimal = Field(..., gt=0)
-    memo: Optional[str] = None
-
-
 class OutsourceWorkInstructionGroupCreate(BaseModel):
     group_seq: Optional[str] = None
     is_bundle: bool = False
@@ -34,7 +28,6 @@ class OutsourceWorkInstructionGroupCreate(BaseModel):
     representative_lot_id: Optional[int] = None
     remark: Optional[str] = None
     items: List[OutsourceWorkInstructionGroupItemCreate] = Field(..., min_length=1)
-    raw_material_allocations: List[OutsourceWorkInstructionRawMaterialAllocationCreate] = Field(default_factory=list)
 
 class OutsourceWorkInstructionBatchGroupCreate(BaseModel):
     customer_partner_id: int
@@ -175,22 +168,6 @@ class OutsourceWorkGroupLotOut(BaseModel):
     expected_output_qty: Optional[int] = None
 
 
-class OutsourceWorkGroupRawMaterialAllocationOut(BaseModel):
-    outsource_work_group_raw_material_allocation_id: int
-    raw_material_id: int
-    raw_material_location_id: int
-    raw_material_inventory_lot_id: Optional[int] = None
-    material_code: Optional[str] = None
-    material_name: Optional[str] = None
-    location_name: Optional[str] = None
-    lot_no: str
-    qty: Decimal
-    unit_cost_snapshot: Optional[Decimal] = None
-    amount_snapshot: Optional[Decimal] = None
-    status: str
-    created_at: datetime
-
-
 class OutsourceWorkGroupListItemOut(BaseModel):
     outsource_work_group_id: int
     outsource_work_instruction_id: int
@@ -212,8 +189,6 @@ class OutsourceWorkGroupListItemOut(BaseModel):
     length_m: Optional[Decimal] = None
     sheet_cut_count: int
     fabric_lot_no: Optional[str] = None
-    raw_material_qty: Decimal = Decimal("0")
-    raw_material_lot_nos_text: str = ""
     can_cancel: bool
     cancel_block_reason: Optional[str] = None
     can_update: bool
@@ -229,7 +204,6 @@ class OutsourceWorkGroupListOut(BaseModel):
 
 class OutsourceWorkGroupDetailOut(OutsourceWorkGroupListItemOut):
     lots: List[OutsourceWorkGroupLotOut] = Field(default_factory=list)
-    raw_material_allocations: List[OutsourceWorkGroupRawMaterialAllocationOut] = Field(default_factory=list)
     files: List[OutsourceWorkInstructionFileOut] = Field(default_factory=list)
 
 
@@ -243,7 +217,6 @@ class OutsourceWorkGroupUpdateIn(BaseModel):
     sheet_cut_count: int = Field(..., gt=0)
     fabric_lot_no: Optional[str] = None
     remark: Optional[str] = None
-    raw_material_allocations: List[OutsourceWorkInstructionRawMaterialAllocationCreate] = Field(default_factory=list)
     reason: str = Field(..., min_length=1)
 
 
