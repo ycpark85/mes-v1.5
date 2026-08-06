@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import json
 import unittest
 from datetime import date
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 from fastapi import HTTPException
@@ -12,6 +15,7 @@ from sqlalchemy.orm import sessionmaker
 
 import app.models  # noqa: F401
 from app.db.base import Base
+from app.models.inspection_result import InspectionResult
 from app.models.inspection_schedule import InspectionSchedule
 from app.models.lot import Lot
 from app.models.order_line import OrderLine
@@ -22,10 +26,17 @@ from app.models.outsource_work_instruction import OutsourceWorkInstruction
 from app.models.outsource_work_instruction_item import OutsourceWorkInstructionItem
 from app.models.partner import Partner
 from app.models.product import Product
+from app.models.product_inventory_movement import ProductInventoryMovement
 from app.models.routing_template import RoutingTemplate
+from app.schemas.inspection_schedule import InspectionScheduleCreate
 from app.schemas.outsource_work_instruction import (
     OutsourceWorkGroupCancelIn,
     OutsourceWorkGroupUpdateIn,
+)
+from app.services.inspection_schedule_service import create_inspection_schedule
+from scripts.cleanup_legacy_canceled_inspection_schedules import (
+    _write_backup,
+    cleanup_legacy_canceled_outsource_schedules,
 )
 from app.services.outsource_work_group_service import cancel_work_group, update_work_group
 
@@ -54,6 +65,8 @@ TEST_TABLE_NAMES = [
     "outsource_work_group",
     "outsource_work_group_item",
     "inspection_schedule",
+    "inspection_result",
+    "product_inventory_movement",
     "outsource_work_group_change_log",
     "raw_material",
     "raw_material_location",
@@ -113,7 +126,7 @@ class OutsourceWorkGroupServiceTests(unittest.TestCase):
         self.assertEqual("tester", change_logs[0].created_by)
         refresh.assert_called_once_with(self.db, [1])
 
-    def test_cancel_work_group_cancels_group_and_deactivates_instruction_item(self) -> None:
+    def test_cancel_work_group_deletes_schedule_and_deactivates_instruction_item(self) -> None:
         lot = self.db.get(Lot, 1)
         lot.status = "RECEIVED"
         self.db.flush()
@@ -137,8 +150,7 @@ class OutsourceWorkGroupServiceTests(unittest.TestCase):
         instruction_item = self.db.get(OutsourceWorkInstructionItem, 1)
         self.assertFalse(instruction_item.is_active)
 
-        inspection_schedule = self.db.get(InspectionSchedule, 1)
-        self.assertEqual("CANCELED", inspection_schedule.status)
+        self.assertIsNone(self.db.get(InspectionSchedule, 1))
         self.assertEqual("WAITING", lot.status)
         change_logs = self.db.execute(select(OutsourceWorkGroupChangeLog)).scalars().all()
         self.assertEqual(1, len(change_logs))
@@ -162,6 +174,263 @@ class OutsourceWorkGroupServiceTests(unittest.TestCase):
             )
 
         self.assertEqual(409, ctx.exception.status_code)
+
+    def test_cancel_work_group_blocks_when_inspection_result_exists(self) -> None:
+        self.db.add(
+            InspectionResult(
+                inspection_result_id=1,
+                inspection_schedule_id=1,
+                good_qty=0,
+                defect_ship_qty=0,
+                defect_qty=0,
+                inspected_qty=0,
+                uninspected_qty=100,
+                discard_qty=0,
+                is_partial=False,
+            )
+        )
+        self.db.commit()
+
+        payload = OutsourceWorkGroupCancelIn(reason="no longer needed")
+
+        with self.assertRaises(HTTPException) as ctx:
+            cancel_work_group(self.db, 1, payload, actor="tester")
+
+        self.assertEqual(409, ctx.exception.status_code)
+        self.assertIsNone(self.db.get(OutsourceWorkGroup, 1).status)
+        self.assertIsNotNone(self.db.get(InspectionSchedule, 1))
+        self.assertIsNotNone(self.db.get(InspectionResult, 1))
+
+    def test_cancel_work_group_blocks_when_inventory_movement_exists(self) -> None:
+        self.db.add(
+            ProductInventoryMovement(
+                inventory_movement_id=1,
+                product_id=1,
+                movement_type="ADJUST_IN",
+                qty=1,
+                balance_after=1,
+                inspection_schedule_id=1,
+            )
+        )
+        self.db.commit()
+
+        payload = OutsourceWorkGroupCancelIn(reason="no longer needed")
+
+        with self.assertRaises(HTTPException) as ctx:
+            cancel_work_group(self.db, 1, payload, actor="tester")
+
+        self.assertEqual(409, ctx.exception.status_code)
+        self.assertIsNone(self.db.get(OutsourceWorkGroup, 1).status)
+        self.assertIsNotNone(self.db.get(InspectionSchedule, 1))
+        self.assertIsNotNone(self.db.get(ProductInventoryMovement, 1))
+
+    def test_cancel_work_group_resequences_remaining_schedule(self) -> None:
+        self.db.add_all(
+            [
+                Lot(
+                    lot_id=2,
+                    lot_no="LOT-002",
+                    order_line_id=1,
+                    product_id=1,
+                    lot_qty=50,
+                    uom="EA",
+                    created_date=date(2026, 1, 3),
+                    due_date=date(2026, 1, 10),
+                    status="WAITING",
+                ),
+                InspectionSchedule(
+                    inspection_schedule_id=2,
+                    lot_id=2,
+                    inspection_date=date(2026, 1, 5),
+                    status="WAITING",
+                    day_seq=2,
+                ),
+            ]
+        )
+        self.db.commit()
+
+        with patch(
+            "app.services.outsource_work_group_service.refresh_order_line_snapshots_for_work_groups"
+        ):
+            cancel_work_group(
+                self.db,
+                1,
+                OutsourceWorkGroupCancelIn(reason="no longer needed"),
+                actor="tester",
+            )
+
+        self.assertIsNone(self.db.get(InspectionSchedule, 1))
+        self.assertEqual(1, self.db.get(InspectionSchedule, 2).day_seq)
+
+    def test_canceled_work_group_schedule_can_be_recreated_for_same_lot_and_date(self) -> None:
+        with patch(
+            "app.services.outsource_work_group_service.refresh_order_line_snapshots_for_work_groups"
+        ):
+            cancel_work_group(
+                self.db,
+                1,
+                OutsourceWorkGroupCancelIn(reason="change vendor"),
+                actor="tester",
+            )
+
+        self.db.add_all(
+            [
+                OutsourceWorkInstruction(
+                    outsource_work_instruction_id=2,
+                    instruction_no="OWI-002",
+                    instruction_date=date(2026, 1, 4),
+                    process_type="CUT",
+                    partner_id=2,
+                    is_bundle=False,
+                ),
+                OutsourceWorkInstructionItem(
+                    outsource_work_instruction_item_id=2,
+                    outsource_work_instruction_id=2,
+                    lot_id=1,
+                    process_type="CUT",
+                    is_active=True,
+                ),
+                OutsourceWorkGroup(
+                    outsource_work_group_id=2,
+                    outsource_work_instruction_id=2,
+                    group_seq="G-002",
+                    process_type="CUT",
+                    is_bundle=False,
+                    sheet_qty=100,
+                    sheet_cut_count=1,
+                    status=None,
+                    representative_lot_id=1,
+                ),
+                OutsourceWorkGroupItem(
+                    outsource_work_group_item_id=2,
+                    outsource_work_group_id=2,
+                    lot_id=1,
+                    cuts_per_sheet=1,
+                    expected_output_qty=100,
+                ),
+            ]
+        )
+        self.db.flush()
+
+        schedule = create_inspection_schedule(
+            self.db,
+            InspectionScheduleCreate(
+                lot_id=1,
+                inspection_date=date(2026, 1, 5),
+                outsource_work_group_id=2,
+            ),
+        )
+
+        self.assertEqual(1, schedule.lot_id)
+        self.assertEqual(2, schedule.outsource_work_group_id)
+        self.assertEqual(2, schedule.outsource_work_group_item_id)
+        self.assertEqual("WAITING", schedule.status)
+
+    def test_create_inspection_schedule_rejects_canceled_work_group(self) -> None:
+        with patch(
+            "app.services.outsource_work_group_service.refresh_order_line_snapshots_for_work_groups"
+        ):
+            cancel_work_group(
+                self.db,
+                1,
+                OutsourceWorkGroupCancelIn(reason="no longer needed"),
+                actor="tester",
+            )
+
+        with self.assertRaises(HTTPException) as ctx:
+            create_inspection_schedule(
+                self.db,
+                InspectionScheduleCreate(
+                    lot_id=1,
+                    inspection_date=date(2026, 1, 5),
+                    outsource_work_group_id=1,
+                ),
+            )
+
+        self.assertEqual(409, ctx.exception.status_code)
+        self.assertEqual(0, len(self.db.execute(select(InspectionSchedule)).scalars().all()))
+
+    def test_legacy_cleanup_dry_run_does_not_delete_schedule(self) -> None:
+        self.db.get(OutsourceWorkGroup, 1).status = "CANCELED"
+        self.db.get(InspectionSchedule, 1).status = "CANCELED"
+        self.db.commit()
+
+        report = cleanup_legacy_canceled_outsource_schedules(self.db)
+
+        self.assertEqual(1, report["candidate_count"])
+        self.assertEqual(1, report["safe_count"])
+        self.assertEqual(0, report["blocked_count"])
+        self.assertFalse(report["applied"])
+        self.assertIsNotNone(self.db.get(InspectionSchedule, 1))
+
+    def test_legacy_cleanup_apply_deletes_only_expected_safe_schedule(self) -> None:
+        self.db.get(OutsourceWorkGroup, 1).status = "CANCELED"
+        self.db.get(InspectionSchedule, 1).status = "CANCELED"
+        self.db.commit()
+
+        report = cleanup_legacy_canceled_outsource_schedules(
+            self.db,
+            apply=True,
+            expected_count=1,
+        )
+
+        self.assertTrue(report["applied"])
+        self.assertEqual(1, report["deleted_count"])
+        self.assertIsNone(self.db.get(InspectionSchedule, 1))
+
+    def test_legacy_cleanup_apply_blocks_referenced_schedule(self) -> None:
+        self.db.get(OutsourceWorkGroup, 1).status = "CANCELED"
+        self.db.get(InspectionSchedule, 1).status = "CANCELED"
+        self.db.add(
+            InspectionResult(
+                inspection_result_id=1,
+                inspection_schedule_id=1,
+                good_qty=0,
+                defect_ship_qty=0,
+                defect_qty=0,
+                inspected_qty=0,
+                uninspected_qty=100,
+                discard_qty=0,
+                is_partial=False,
+            )
+        )
+        self.db.commit()
+
+        with self.assertRaises(RuntimeError):
+            cleanup_legacy_canceled_outsource_schedules(
+                self.db,
+                apply=True,
+                expected_count=0,
+            )
+
+        self.assertIsNotNone(self.db.get(InspectionSchedule, 1))
+        self.assertIsNotNone(self.db.get(InspectionResult, 1))
+
+    def test_legacy_cleanup_writes_complete_recovery_snapshot(self) -> None:
+        self.db.get(OutsourceWorkGroup, 1).status = "CANCELED"
+        self.db.get(InspectionSchedule, 1).status = "CANCELED"
+        self.db.commit()
+
+        report = cleanup_legacy_canceled_outsource_schedules(
+            self.db,
+            apply=True,
+            expected_count=1,
+        )
+
+        with TemporaryDirectory() as backup_root:
+            backup_path = _write_backup(
+                backup_root=Path(backup_root),
+                app_env="test",
+                database_name="test_db",
+                report=report,
+            )
+            payload = json.loads(Path(backup_path).read_text(encoding="utf-8"))
+
+        self.assertEqual(1, payload["candidate_count"])
+        self.assertEqual(1, len(payload["rows"]))
+        self.assertEqual(1, payload["rows"][0]["inspection_schedule_id"])
+        self.assertEqual("CANCELED", payload["rows"][0]["status"])
+        self.assertIn("created_at", payload["rows"][0])
 
     def _seed_data(self) -> None:
         self.db.add_all(

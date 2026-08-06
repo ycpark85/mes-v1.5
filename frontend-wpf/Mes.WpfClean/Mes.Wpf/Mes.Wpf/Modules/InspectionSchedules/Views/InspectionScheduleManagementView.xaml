@@ -394,7 +394,7 @@
                             <DataTemplate>
                                 <TextBlock x:Name="StatusText"
                                            Style="{StaticResource CenteredTextBlockStyle}"
-                                           Foreground="#4B5563"
+                                           Foreground="{StaticResource Brush.TextSecondary}"
                                            FontWeight="SemiBold"
                                            Text="대기"/>
                                 <DataTemplate.Triggers>
@@ -403,18 +403,23 @@
                                     </DataTrigger>
                                     <DataTrigger Binding="{Binding Status}" Value="RECEIVED">
                                         <Setter TargetName="StatusText" Property="Text" Value="입고완료"/>
+                                        <Setter TargetName="StatusText" Property="Foreground" Value="{StaticResource Brush.Info}"/>
                                     </DataTrigger>
                                     <DataTrigger Binding="{Binding Status}" Value="IN_PROGRESS">
                                         <Setter TargetName="StatusText" Property="Text" Value="진행중"/>
+                                        <Setter TargetName="StatusText" Property="Foreground" Value="{StaticResource Brush.Primary}"/>
                                     </DataTrigger>
                                     <DataTrigger Binding="{Binding Status}" Value="PARTIAL_DONE">
                                         <Setter TargetName="StatusText" Property="Text" Value="분할검수완료"/>
+                                        <Setter TargetName="StatusText" Property="Foreground" Value="{StaticResource Brush.Warning}"/>
                                     </DataTrigger>
                                     <DataTrigger Binding="{Binding Status}" Value="DONE">
                                         <Setter TargetName="StatusText" Property="Text" Value="검수완료"/>
+                                        <Setter TargetName="StatusText" Property="Foreground" Value="{StaticResource Brush.Success}"/>
                                     </DataTrigger>
                                     <DataTrigger Binding="{Binding Status}" Value="CANCELED">
                                         <Setter TargetName="StatusText" Property="Text" Value="취소"/>
+                                        <Setter TargetName="StatusText" Property="Foreground" Value="{StaticResource Brush.Danger}"/>
                                     </DataTrigger>
                                 </DataTemplate.Triggers>
                             </DataTemplate>
@@ -464,37 +469,47 @@
                     <DataGridTemplateColumn Header="검수" Width="110">
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
-                                <Button Click="InspectionActionButton_Click"
+                                <DataTemplate.Resources>
+                                    <CornerRadius x:Key="Button.CornerRadius">0</CornerRadius>
+                                </DataTemplate.Resources>
+                                <Button x:Name="InspectionActionButton"
+                                        Click="InspectionActionButton_Click"
                                         Tag="{Binding}"
-                                        Width="90"
-                                        Height="28">    
-                                    <Button.Style>
-                                        <Style TargetType="Button">
-                                            <Setter Property="Content" Value="검수시작" />
-                                            <Setter Property="IsEnabled" Value="False" />
-
-                                            <Style.Triggers>
-                                                <MultiDataTrigger>
-                                                    <MultiDataTrigger.Conditions>
-                                                        <Condition Binding="{Binding Status}" Value="RECEIVED"/>
-                                                        <Condition Binding="{Binding DataContext.CanWriteInspection, RelativeSource={RelativeSource AncestorType=DataGrid}}" Value="True"/>
-                                                    </MultiDataTrigger.Conditions>
-                                                    <Setter Property="Content" Value="검수시작" />
-                                                    <Setter Property="IsEnabled" Value="True" />
-                                                </MultiDataTrigger>
-
-                                                <MultiDataTrigger>
-                                                    <MultiDataTrigger.Conditions>
-                                                        <Condition Binding="{Binding Status}" Value="IN_PROGRESS"/>
-                                                        <Condition Binding="{Binding DataContext.CanWriteInspection, RelativeSource={RelativeSource AncestorType=DataGrid}}" Value="True"/>
-                                                    </MultiDataTrigger.Conditions>
-                                                    <Setter Property="Content" Value="검수완료" />
-                                                    <Setter Property="IsEnabled" Value="True" />
-                                                </MultiDataTrigger>
-                                            </Style.Triggers>
-                                        </Style>
-                                    </Button.Style>
-                                </Button>
+                                        Width="96"
+                                        Height="28"
+                                        Content="검수시작"
+                                        IsEnabled="False"
+                                        Style="{StaticResource SecondaryButtonStyle}"/>
+                                <DataTemplate.Triggers>
+                                    <DataTrigger Binding="{Binding Status}" Value="IN_PROGRESS">
+                                        <Setter TargetName="InspectionActionButton" Property="Content" Value="검수완료"/>
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding Status}" Value="PARTIAL_DONE">
+                                        <Setter TargetName="InspectionActionButton" Property="Content" Value="분할완료"/>
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding Status}" Value="DONE">
+                                        <Setter TargetName="InspectionActionButton" Property="Content" Value="완료됨"/>
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding Status}" Value="CANCELED">
+                                        <Setter TargetName="InspectionActionButton" Property="Content" Value="취소됨"/>
+                                    </DataTrigger>
+                                    <MultiDataTrigger>
+                                        <MultiDataTrigger.Conditions>
+                                            <Condition Binding="{Binding Status}" Value="RECEIVED"/>
+                                            <Condition Binding="{Binding DataContext.CanWriteInspection, RelativeSource={RelativeSource AncestorType=DataGrid}}" Value="True"/>
+                                        </MultiDataTrigger.Conditions>
+                                        <Setter TargetName="InspectionActionButton" Property="Style" Value="{StaticResource PrimaryButtonStyle}"/>
+                                        <Setter TargetName="InspectionActionButton" Property="IsEnabled" Value="True"/>
+                                    </MultiDataTrigger>
+                                    <MultiDataTrigger>
+                                        <MultiDataTrigger.Conditions>
+                                            <Condition Binding="{Binding Status}" Value="IN_PROGRESS"/>
+                                            <Condition Binding="{Binding DataContext.CanWriteInspection, RelativeSource={RelativeSource AncestorType=DataGrid}}" Value="True"/>
+                                        </MultiDataTrigger.Conditions>
+                                        <Setter TargetName="InspectionActionButton" Property="Style" Value="{StaticResource SuccessButtonStyle}"/>
+                                        <Setter TargetName="InspectionActionButton" Property="IsEnabled" Value="True"/>
+                                    </MultiDataTrigger>
+                                </DataTemplate.Triggers>
                             </DataTemplate>
                         </DataGridTemplateColumn.CellTemplate>
                     </DataGridTemplateColumn>

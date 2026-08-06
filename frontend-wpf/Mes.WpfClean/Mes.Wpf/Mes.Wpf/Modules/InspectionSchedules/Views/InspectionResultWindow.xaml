@@ -678,7 +678,7 @@
                               GridLinesVisibility="Horizontal"
                               Background="White"
                               ScrollViewer.VerticalScrollBarVisibility="Auto"
-                              ScrollViewer.HorizontalScrollBarVisibility="Auto">        
+                              ScrollViewer.HorizontalScrollBarVisibility="Disabled">
 
                         <DataGrid.Columns>
                             <DataGridTemplateColumn Header="불량유형 검색" Width="130">
@@ -695,28 +695,22 @@
                                 </DataGridTemplateColumn.CellTemplate>
                             </DataGridTemplateColumn>
 
-                            <DataGridTextColumn Header="불량유형ID"
-                                                Binding="{Binding DefectTypeId}"
-                                                IsReadOnly="True"
-                                                Width="90"
-                                                ElementStyle="{StaticResource GridTextStyle}"/> 
-
                             <DataGridTextColumn Header="불량코드"
                                                 Binding="{Binding DefectCode}"
                                                 IsReadOnly="True"
-                                                Width="120"
+                                                Width="85"
                                                 ElementStyle="{StaticResource GridTextStyle}"/> 
 
                             <DataGridTextColumn Header="대분류"
                                                 Binding="{Binding Category1Name}"
                                                 IsReadOnly="True"
-                                                Width="140"
+                                                Width="105"
                                                 ElementStyle="{StaticResource GridTextStyle}"/> 
 
                             <DataGridTextColumn Header="소분류"
                                                 Binding="{Binding Category2Name}"
                                                 IsReadOnly="True"
-                                                Width="140"
+                                                Width="105"
                                                 ElementStyle="{StaticResource GridTextStyle}"/>     
 
                             <DataGridTemplateColumn Header="처리구분" Width="120">
@@ -746,7 +740,7 @@
                                 </DataGridTemplateColumn.CellTemplate>
                             </DataGridTemplateColumn>
 
-                            <DataGridTemplateColumn Header="메모" Width="260">
+                            <DataGridTemplateColumn Header="메모" Width="*">
                                 <DataGridTemplateColumn.CellTemplate>
                                     <DataTemplate>
                                         <Border Padding="6,4"

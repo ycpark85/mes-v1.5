@@ -8,16 +8,19 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.core.time import utc_now
+from app.models.inspection_result import InspectionResult
 from app.models.inspection_schedule import InspectionSchedule
 from app.models.lot import Lot
 from app.models.outsource_work_group import OutsourceWorkGroup
 from app.models.outsource_work_group_change_log import OutsourceWorkGroupChangeLog
 from app.models.outsource_work_group_item import OutsourceWorkGroupItem
 from app.models.outsource_work_instruction_item import OutsourceWorkInstructionItem
+from app.models.product_inventory_movement import ProductInventoryMovement
 from app.schemas.outsource_work_instruction import (
     OutsourceWorkGroupCancelIn,
     OutsourceWorkGroupUpdateIn,
 )
+from app.services.inspection_schedule_service import resequence_inspection_date
 from app.services.outsource_work_instruction_query import (
     OUTSOURCE_WORK_GROUP_STATUS_CANCELED,
     get_cancel_block_reason,
@@ -111,7 +114,7 @@ def cancel_work_group(
         raise HTTPException(status_code=422, detail="Cancel reason is required")
 
     before_data = _build_work_group_change_snapshot(db, work_group)
-    _cancel_linked_inspection_schedules(db, work_group)
+    _delete_linked_unstarted_inspection_schedules(db, work_group)
 
     work_group.status = OUTSOURCE_WORK_GROUP_STATUS_CANCELED
     work_group.canceled_at = utc_now()
@@ -170,7 +173,7 @@ def cancel_work_group(
     return work_group
 
 
-def _cancel_linked_inspection_schedules(
+def _delete_linked_unstarted_inspection_schedules(
     db: Session,
     work_group: OutsourceWorkGroup,
 ) -> None:
@@ -180,16 +183,68 @@ def _cancel_linked_inspection_schedules(
             .where(
                 InspectionSchedule.outsource_work_group_id
                 == work_group.outsource_work_group_id,
-                InspectionSchedule.status.in_(("WAITING", "RECEIVED")),
             )
+            .order_by(InspectionSchedule.inspection_schedule_id.asc())
             .with_for_update()
         )
         .scalars()
         .all()
     )
 
+    if not schedules:
+        return
+
+    progressed_schedule = next(
+        (
+            schedule
+            for schedule in schedules
+            if schedule.status not in {"WAITING", "RECEIVED", "CANCELED"}
+        ),
+        None,
+    )
+    if progressed_schedule is not None:
+        raise HTTPException(
+            status_code=409,
+            detail="Cannot cancel after linked inspection has progressed",
+        )
+
+    schedule_ids = [schedule.inspection_schedule_id for schedule in schedules]
+    result_exists = (
+        db.execute(
+            select(InspectionResult.inspection_result_id)
+            .where(InspectionResult.inspection_schedule_id.in_(schedule_ids))
+            .limit(1)
+        ).scalar_one_or_none()
+        is not None
+    )
+    if result_exists:
+        raise HTTPException(
+            status_code=409,
+            detail="Cannot cancel because a linked inspection result exists",
+        )
+
+    inventory_movement_exists = (
+        db.execute(
+            select(ProductInventoryMovement.inventory_movement_id)
+            .where(ProductInventoryMovement.inspection_schedule_id.in_(schedule_ids))
+            .limit(1)
+        ).scalar_one_or_none()
+        is not None
+    )
+    if inventory_movement_exists:
+        raise HTTPException(
+            status_code=409,
+            detail="Cannot cancel because a linked inventory movement exists",
+        )
+
+    affected_dates = sorted({schedule.inspection_date for schedule in schedules})
     for schedule in schedules:
-        schedule.status = "CANCELED"
+        db.delete(schedule)
+
+    db.flush()
+
+    for inspection_date in affected_dates:
+        resequence_inspection_date(db, inspection_date)
 
 
 def _reset_canceled_work_group_lots_to_waiting(

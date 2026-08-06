@@ -34,13 +34,14 @@ def create_inspection_schedule(
     if not lot:
         raise HTTPException(status_code=404, detail="Lot not found")
 
-    next_seq = _get_next_day_seq(db, payload.inspection_date)
-
     selected_schedule: InspectionSchedule | None = None
     created_schedules: list[InspectionSchedule] = []
 
     if payload.outsource_work_group_id:
-        work_group = db.get(OutsourceWorkGroup, payload.outsource_work_group_id)
+        work_group = _get_outsource_work_group_for_update(
+            db,
+            payload.outsource_work_group_id,
+        )
 
         if not work_group:
             raise HTTPException(
@@ -48,6 +49,13 @@ def create_inspection_schedule(
                 detail="Outsource work group not found",
             )
 
+        if work_group.status == "CANCELED":
+            raise HTTPException(
+                status_code=409,
+                detail="Canceled outsource work group cannot be scheduled for inspection",
+            )
+
+        next_seq = _get_next_day_seq(db, payload.inspection_date)
         group_items = _get_outsource_work_group_items(
             db,
             payload.outsource_work_group_id,
@@ -113,6 +121,7 @@ def create_inspection_schedule(
             )
 
     else:
+        next_seq = _get_next_day_seq(db, payload.inspection_date)
         existing_schedule = _get_existing_active_schedule(
             db,
             lot_id=payload.lot_id,
@@ -182,9 +191,52 @@ def receive_inspection_schedule(
     db: Session,
     inspection_schedule_id: int,
 ) -> InspectionSchedule:
-    schedule = db.get(InspectionSchedule, inspection_schedule_id)
+    schedule_link = db.execute(
+        select(
+            InspectionSchedule.outsource_work_group_id,
+            InspectionSchedule.inspection_date,
+        ).where(
+            InspectionSchedule.inspection_schedule_id == inspection_schedule_id
+        )
+    ).one_or_none()
 
-    if not schedule:
+    if schedule_link is None:
+        raise HTTPException(status_code=404, detail="Inspection schedule not found")
+
+    work_group: OutsourceWorkGroup | None = None
+    locked_group_schedules: list[InspectionSchedule] = []
+
+    if schedule_link.outsource_work_group_id:
+        work_group = _get_outsource_work_group_for_update(
+            db,
+            schedule_link.outsource_work_group_id,
+        )
+        locked_group_schedules = (
+            db.execute(
+                select(InspectionSchedule)
+                .where(
+                    InspectionSchedule.outsource_work_group_id
+                    == schedule_link.outsource_work_group_id,
+                    InspectionSchedule.inspection_date == schedule_link.inspection_date,
+                )
+                .order_by(InspectionSchedule.inspection_schedule_id.asc())
+                .with_for_update()
+            )
+            .scalars()
+            .all()
+        )
+        schedule = next(
+            (
+                row
+                for row in locked_group_schedules
+                if row.inspection_schedule_id == inspection_schedule_id
+            ),
+            None,
+        )
+    else:
+        schedule = _get_inspection_schedule_for_update(db, inspection_schedule_id)
+
+    if schedule is None:
         raise HTTPException(status_code=404, detail="Inspection schedule not found")
 
     if schedule.status != "WAITING":
@@ -195,8 +247,6 @@ def receive_inspection_schedule(
         return schedule
 
     if schedule.outsource_work_group_id:
-        work_group = db.get(OutsourceWorkGroup, schedule.outsource_work_group_id)
-
         if not work_group:
             raise HTTPException(
                 status_code=404,
@@ -209,22 +259,14 @@ def receive_inspection_schedule(
                 detail="Only SHIPPED outsource work group can be received",
             )
 
-        group_schedules = (
-            db.execute(
-                select(InspectionSchedule)
-                .where(
-                    InspectionSchedule.outsource_work_group_id
-                    == schedule.outsource_work_group_id,
-                    InspectionSchedule.inspection_date == schedule.inspection_date,
-                    InspectionSchedule.status == "WAITING",
-                )
-                .order_by(
-                    InspectionSchedule.day_seq.asc(),
-                    InspectionSchedule.inspection_schedule_id.asc(),
-                )
+        group_schedules = [
+            row for row in locked_group_schedules if row.status == "WAITING"
+        ]
+        group_schedules.sort(
+            key=lambda row: (
+                row.day_seq if row.day_seq is not None else 2**31,
+                row.inspection_schedule_id,
             )
-            .scalars()
-            .all()
         )
 
         if not group_schedules:
@@ -261,7 +303,7 @@ def start_inspection_schedule(
     *,
     today: date | None = None,
 ) -> InspectionSchedule:
-    schedule = db.get(InspectionSchedule, inspection_schedule_id)
+    schedule = _get_inspection_schedule_for_update(db, inspection_schedule_id)
     if not schedule:
         raise HTTPException(status_code=404, detail="Inspection schedule not found")
 
@@ -480,6 +522,39 @@ def _get_next_day_seq(db: Session, inspection_date: date) -> int:
     ).scalar_one()
 
     return int(max_seq) + 1
+
+
+def _get_inspection_schedule_for_update(
+    db: Session,
+    inspection_schedule_id: int,
+) -> InspectionSchedule | None:
+    return (
+        db.execute(
+            select(InspectionSchedule)
+            .where(
+                InspectionSchedule.inspection_schedule_id == inspection_schedule_id
+            )
+            .with_for_update()
+        )
+        .scalar_one_or_none()
+    )
+
+
+def _get_outsource_work_group_for_update(
+    db: Session,
+    outsource_work_group_id: int,
+) -> OutsourceWorkGroup | None:
+    return (
+        db.execute(
+            select(OutsourceWorkGroup)
+            .where(
+                OutsourceWorkGroup.outsource_work_group_id
+                == outsource_work_group_id
+            )
+            .with_for_update()
+        )
+        .scalar_one_or_none()
+    )
 
 
 def _get_existing_active_schedule(
