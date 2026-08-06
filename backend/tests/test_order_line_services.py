@@ -25,6 +25,7 @@ from app.models.outsource_work_group import OutsourceWorkGroup
 from app.models.outsource_work_group_change_log import OutsourceWorkGroupChangeLog
 from app.models.outsource_work_group_item import OutsourceWorkGroupItem
 from app.models.outsource_work_instruction import OutsourceWorkInstruction
+from app.models.outsource_work_instruction_item import OutsourceWorkInstructionItem
 from app.models.partner import Partner
 from app.models.process import Process
 from app.models.product import Product
@@ -875,6 +876,54 @@ class OrderLineServicesTests(unittest.TestCase):
 
         self.assertEqual(409, ctx.exception.status_code)
         self.assertEqual(100, order_line.order_qty)
+
+    def test_update_order_line_detail_fields_rejects_legacy_active_outsource_item(self) -> None:
+        order_line = self._seed_closed_order_line_with_waiting_lot()
+        self.db.add_all(
+            [
+                OutsourceWorkInstruction(
+                    outsource_work_instruction_id=699,
+                    instruction_no="OWI-LEGACY-QTY-CORRECTION",
+                    instruction_date=date(2026, 1, 3),
+                    process_type="CUT",
+                    partner_id=1,
+                    is_bundle=False,
+                ),
+                OutsourceWorkInstructionItem(
+                    outsource_work_instruction_item_id=699,
+                    outsource_work_instruction_id=699,
+                    lot_id=501,
+                    process_type="CUT",
+                    is_active=True,
+                ),
+            ]
+        )
+        self.db.flush()
+
+        with self.assertRaises(HTTPException) as ctx:
+            update_order_line_detail_fields(
+                self.db,
+                order_line.order_line_id,
+                OrderLineDetailUpdate(
+                    due_date=order_line.due_date,
+                    order_qty=120,
+                    memo="must remain unchanged",
+                ),
+                actor="tester",
+            )
+
+        self.assertEqual(409, ctx.exception.status_code)
+        self.assertIn("외주 작업지시를 먼저 취소", ctx.exception.detail)
+        self.assertEqual(100, order_line.order_qty)
+        self.assertEqual(102, self.db.get(Lot, 501).lot_qty)
+        self.assertEqual(
+            0,
+            self.db.scalar(
+                select(func.count())
+                .select_from(OrderLineChangeLog)
+                .where(OrderLineChangeLog.order_line_id == order_line.order_line_id)
+            ),
+        )
 
     def test_update_order_line_detail_fields_requires_outsource_cancel_then_syncs_quantity(self) -> None:
         order_line = self._seed_closed_order_line_with_waiting_lot()

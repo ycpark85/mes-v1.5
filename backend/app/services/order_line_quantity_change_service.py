@@ -12,6 +12,7 @@ from app.models.order_line import OrderLine
 from app.models.order_line_plan_history import OrderLinePlanHistory
 from app.models.outsource_work_group import OutsourceWorkGroup
 from app.models.outsource_work_group_item import OutsourceWorkGroupItem
+from app.models.outsource_work_instruction_item import OutsourceWorkInstructionItem
 from app.models.partner import Partner
 from app.models.product_inventory_movement import ProductInventoryMovement
 from app.models.shipment_line import ShipmentLine
@@ -302,6 +303,22 @@ def _has_started_lot_step(db: Session, lot_id: int) -> bool:
 
 
 def _has_active_outsource_work(db: Session, lot_id: int) -> bool:
+    active_instruction_item_exists = (
+        db.execute(
+            select(
+                OutsourceWorkInstructionItem.outsource_work_instruction_item_id
+            )
+            .where(
+                OutsourceWorkInstructionItem.lot_id == lot_id,
+                OutsourceWorkInstructionItem.is_active.is_(True),
+            )
+            .limit(1)
+        ).scalar_one_or_none()
+        is not None
+    )
+    if active_instruction_item_exists:
+        return True
+
     return (
         db.execute(
             select(OutsourceWorkGroupItem.outsource_work_group_item_id)
