@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import unittest
-from datetime import date
+from datetime import date, datetime
 from unittest.mock import patch
 
 from fastapi import HTTPException
@@ -19,7 +19,12 @@ from app.models.drawing_rivision_file import DrawingRevisionFile
 from app.models.lot import Lot
 from app.models.lot_step import LotStep
 from app.models.order_line import OrderLine
+from app.models.order_line_change_log import OrderLineChangeLog
 from app.models.order_line_plan_history import OrderLinePlanHistory
+from app.models.outsource_work_group import OutsourceWorkGroup
+from app.models.outsource_work_group_change_log import OutsourceWorkGroupChangeLog
+from app.models.outsource_work_group_item import OutsourceWorkGroupItem
+from app.models.outsource_work_instruction import OutsourceWorkInstruction
 from app.models.partner import Partner
 from app.models.process import Process
 from app.models.product import Product
@@ -76,6 +81,7 @@ TEST_TABLE_NAMES = [
     "product_inventory",
     "product_inventory_lot",
     "order_line",
+    "order_line_change_log",
     "lot",
     "lot_step",
     "order_line_plan_history",
@@ -92,6 +98,7 @@ TEST_TABLE_NAMES = [
     "outsource_work_instruction_item",
     "outsource_work_group",
     "outsource_work_group_item",
+    "outsource_work_group_change_log",
     "outsource_purchase_order",
     "outsource_purchase_order_item",
 ]
@@ -210,6 +217,7 @@ class OrderLineServicesTests(unittest.TestCase):
                 self.db,
                 order_line.order_line_id,
                 OrderLineUpdate(due_date=new_due_date, memo="납기 조정"),
+                actor="planner01",
             )
 
         waiting_lot = self.db.get(Lot, 101)
@@ -221,13 +229,53 @@ class OrderLineServicesTests(unittest.TestCase):
         self.assertEqual(date(2026, 1, 31), started_lot.due_date)
         refresh.assert_called_once_with(self.db, order_line.order_line_id)
 
+        changes = (
+            self.db.execute(
+                select(OrderLineChangeLog)
+                .where(OrderLineChangeLog.order_line_id == order_line.order_line_id)
+                .order_by(OrderLineChangeLog.order_line_change_log_id)
+            )
+            .scalars()
+            .all()
+        )
+        self.assertEqual(["DUE_DATE_CHANGE", "MEMO_CHANGE"], [item.change_type for item in changes])
+        self.assertEqual(["planner01", "planner01"], [item.created_by for item in changes])
+
     def test_update_closed_order_line_rejects_quantity_change(self) -> None:
         order_line = self._seed_closed_order_line_with_lots()
 
         with self.assertRaises(HTTPException) as ctx:
-            update_order_line_fields(self.db, order_line.order_line_id, OrderLineUpdate(order_qty=200))
+            update_order_line_fields(
+                self.db,
+                order_line.order_line_id,
+                OrderLineUpdate(order_qty=200),
+                actor="planner01",
+            )
 
         self.assertEqual(409, ctx.exception.status_code)
+
+    def test_update_open_order_line_quantity_uses_shared_change_policy(self) -> None:
+        order_line = self._seed_open_order_line_without_lots()
+
+        with patch("app.services.order_line_update_service.refresh_order_line_snapshot"):
+            updated = update_order_line_fields(
+                self.db,
+                order_line.order_line_id,
+                OrderLineUpdate(order_qty=125),
+                actor="planner01",
+            )
+
+        change = self.db.execute(
+            select(OrderLineChangeLog).where(
+                OrderLineChangeLog.order_line_id == order_line.order_line_id,
+                OrderLineChangeLog.change_type == "QUANTITY_CHANGE",
+            )
+        ).scalar_one()
+
+        self.assertEqual(125, updated.order_qty)
+        self.assertEqual({"order_qty": 100, "lot_qty": None}, change.before_data)
+        self.assertEqual({"order_qty": 125, "lot_qty": None}, change.after_data)
+        self.assertEqual("planner01", change.created_by)
 
     def test_order_line_detail_marks_flags_current_process_and_plan_timeline(self) -> None:
         order_line = self._seed_closed_order_line_with_lots()
@@ -425,7 +473,7 @@ class OrderLineServicesTests(unittest.TestCase):
         self.assertFalse(candidates["LOT-WAITING"].can_create_rework)
         self.assertTrue(candidates["LOT-STARTED"].can_create_rework)
 
-    def test_update_order_line_detail_fields_updates_due_qty_memo_and_syncs_waiting_lots(self) -> None:
+    def test_update_order_line_detail_fields_updates_due_memo_and_syncs_waiting_lot_due_date(self) -> None:
         order_line = self._seed_closed_order_line_with_lots()
         new_due_date = date(2026, 2, 20)
 
@@ -435,20 +483,518 @@ class OrderLineServicesTests(unittest.TestCase):
                 order_line.order_line_id,
                 OrderLineDetailUpdate(
                     due_date=new_due_date,
-                    order_qty=120,
+                    order_qty=100,
                     memo="detail memo",
                 ),
+                actor="tester",
             )
 
         waiting_lot = self.db.get(Lot, 101)
         started_lot = self.db.get(Lot, 102)
 
         self.assertEqual(new_due_date, updated.due_date)
-        self.assertEqual(120, updated.order_qty)
+        self.assertEqual(100, updated.order_qty)
         self.assertEqual("detail memo", updated.memo)
         self.assertEqual(new_due_date, waiting_lot.due_date)
         self.assertEqual(date(2026, 1, 31), started_lot.due_date)
+        change_logs = (
+            self.db.execute(
+                select(OrderLineChangeLog)
+                .where(OrderLineChangeLog.order_line_id == order_line.order_line_id)
+                .order_by(OrderLineChangeLog.order_line_change_log_id.asc())
+            )
+            .scalars()
+            .all()
+        )
+        self.assertEqual(
+            ["DUE_DATE_CHANGE", "MEMO_CHANGE"],
+            [change_log.change_type for change_log in change_logs],
+        )
+        self.assertTrue(
+            all(change_log.created_by == "tester" for change_log in change_logs)
+        )
         refresh.assert_called_once_with(self.db, order_line.order_line_id)
+
+    def test_update_order_line_detail_fields_syncs_waiting_lot_and_plan_quantity(self) -> None:
+        order_line = self._seed_closed_order_line_with_waiting_lot()
+
+        with patch(
+            "app.services.order_line_detail_update_service.refresh_order_line_snapshot"
+        ) as refresh:
+            updated = update_order_line_detail_fields(
+                self.db,
+                order_line.order_line_id,
+                OrderLineDetailUpdate(
+                    due_date=order_line.due_date,
+                    order_qty=120,
+                    memo="quantity corrected",
+                ),
+                actor="tester",
+            )
+
+        lot = self.db.get(Lot, 501)
+        plan_histories = (
+            self.db.execute(
+                select(OrderLinePlanHistory)
+                .where(OrderLinePlanHistory.order_line_id == order_line.order_line_id)
+                .order_by(OrderLinePlanHistory.plan_history_id.asc())
+            )
+            .scalars()
+            .all()
+        )
+
+        self.assertEqual(120, updated.order_qty)
+        self.assertEqual(123, lot.lot_qty)
+        self.assertEqual(2, len(plan_histories))
+        self.assertEqual(123, plan_histories[-1].production_qty)
+        self.assertEqual("tester", plan_histories[-1].created_by)
+        self.assertIn("수주수량 변경으로 처리계획 재계산", plan_histories[-1].memo)
+
+        quantity_change_log = self.db.execute(
+            select(OrderLineChangeLog).where(
+                OrderLineChangeLog.order_line_id == order_line.order_line_id,
+                OrderLineChangeLog.change_type == "QUANTITY_CHANGE",
+            )
+        ).scalar_one()
+        self.assertEqual(501, quantity_change_log.lot_id)
+        self.assertEqual(100, quantity_change_log.before_data["order_qty"])
+        self.assertEqual(120, quantity_change_log.after_data["order_qty"])
+        self.assertEqual(102, quantity_change_log.before_data["lot_qty"])
+        self.assertEqual(123, quantity_change_log.after_data["lot_qty"])
+        self.assertEqual("tester", quantity_change_log.created_by)
+
+        detail = get_order_line_detail_dto(self.db, order_line.order_line_id)
+        quantity_timeline_items = [
+            item
+            for item in detail.timeline
+            if item.event_type == "ORDER_QUANTITY_CHANGED"
+        ]
+        self.assertEqual(1, len(quantity_timeline_items))
+        timeline_item = quantity_timeline_items[0]
+        self.assertEqual("수주수량 정정", timeline_item.event_label)
+        self.assertIn("수주수량 100 EA → 120 EA", timeline_item.message)
+        self.assertIn("LOT-QTY-CORRECTION 계획수량 102 EA → 123 EA", timeline_item.message)
+        self.assertIn("처리자: tester", timeline_item.message)
+        self.assertEqual("ORDER_LINE_CHANGE_LOG", timeline_item.ref_type)
+        self.assertEqual(quantity_change_log.order_line_change_log_id, timeline_item.ref_id)
+        refresh.assert_called_once_with(self.db, order_line.order_line_id)
+
+    def test_update_partial_stock_order_quantity_keeps_reservation_and_recalculates_lot(self) -> None:
+        order_line = self._seed_partial_stock_order_line()
+
+        with patch(
+            "app.services.order_line_detail_update_service.refresh_order_line_snapshot"
+        ):
+            updated = update_order_line_detail_fields(
+                self.db,
+                order_line.order_line_id,
+                OrderLineDetailUpdate(
+                    due_date=order_line.due_date,
+                    order_qty=120,
+                    memo="partial stock quantity corrected",
+                ),
+                actor="tester",
+            )
+
+        lot = self.db.get(Lot, 501)
+        reservation = self.db.get(ShipmentLine, 601)
+        histories = (
+            self.db.execute(
+                select(OrderLinePlanHistory)
+                .where(OrderLinePlanHistory.order_line_id == order_line.order_line_id)
+                .order_by(OrderLinePlanHistory.plan_history_id.asc())
+            )
+            .scalars()
+            .all()
+        )
+        quantity_change = self.db.execute(
+            select(OrderLineChangeLog).where(
+                OrderLineChangeLog.order_line_id == order_line.order_line_id,
+                OrderLineChangeLog.change_type == "QUANTITY_CHANGE",
+            )
+        ).scalar_one()
+
+        self.assertEqual(120, updated.order_qty)
+        self.assertEqual(103, lot.lot_qty)
+        self.assertEqual("WAITING", reservation.status)
+        self.assertEqual(20, reservation.ship_qty)
+        self.assertEqual(0, reservation.shipped_qty)
+        self.assertEqual(2, len(histories))
+        self.assertEqual("PARTIAL_STOCK_PLUS_PRODUCTION", histories[-1].plan_type)
+        self.assertEqual(123, histories[-1].ship_target_qty)
+        self.assertEqual(20, histories[-1].stock_ship_qty)
+        self.assertEqual(103, histories[-1].production_qty)
+        self.assertEqual("tester", histories[-1].created_by)
+        self.assertIn("예약재고 20 유지", histories[-1].memo)
+        self.assertEqual(
+            {
+                "ship_target_qty": 102,
+                "stock_ship_qty": 20,
+                "production_qty": 82,
+            },
+            quantity_change.before_data["plan"],
+        )
+        self.assertEqual(
+            {
+                "ship_target_qty": 123,
+                "stock_ship_qty": 20,
+                "production_qty": 103,
+            },
+            quantity_change.after_data["plan"],
+        )
+
+        detail = get_order_line_detail_dto(self.db, order_line.order_line_id)
+        timeline_item = next(
+            item
+            for item in detail.timeline
+            if item.event_type == "ORDER_QUANTITY_CHANGED"
+        )
+        self.assertIn("예약재고 20 EA 유지", timeline_item.message)
+        self.assertIn("처리자: tester", timeline_item.message)
+
+    def test_update_partial_stock_order_quantity_rejects_actual_inventory_movement(self) -> None:
+        order_line = self._seed_partial_stock_order_line()
+        self.db.add(
+            ProductInventoryMovement(
+                inventory_movement_id=601,
+                product_id=order_line.product_id,
+                movement_type="SHIP_OUT",
+                qty=-1,
+                balance_after=19,
+                source_type="SHIPMENT_LINE",
+                source_id=601,
+                order_line_id=order_line.order_line_id,
+            )
+        )
+        self.db.flush()
+
+        with self.assertRaises(HTTPException) as ctx:
+            update_order_line_detail_fields(
+                self.db,
+                order_line.order_line_id,
+                OrderLineDetailUpdate(
+                    due_date=order_line.due_date,
+                    order_qty=120,
+                    memo="must stay blocked",
+                ),
+                actor="tester",
+            )
+
+        self.assertEqual(409, ctx.exception.status_code)
+        self.assertIn("실제 재고 수불 이력", ctx.exception.detail)
+        self.assertEqual(100, order_line.order_qty)
+        self.assertEqual(82, self.db.get(Lot, 501).lot_qty)
+
+    def test_update_partial_stock_order_quantity_rejects_started_reservation(self) -> None:
+        order_line = self._seed_partial_stock_order_line()
+        reservation = self.db.get(ShipmentLine, 601)
+        reservation.status = "DONE"
+        reservation.shipped_qty = 20
+        self.db.flush()
+
+        with self.assertRaises(HTTPException) as ctx:
+            update_order_line_detail_fields(
+                self.db,
+                order_line.order_line_id,
+                OrderLineDetailUpdate(
+                    due_date=order_line.due_date,
+                    order_qty=120,
+                    memo="must stay blocked",
+                ),
+                actor="tester",
+            )
+
+        self.assertEqual(409, ctx.exception.status_code)
+        self.assertIn("이미 출하 처리되었거나 변경", ctx.exception.detail)
+        self.assertEqual(100, order_line.order_qty)
+        self.assertEqual(82, self.db.get(Lot, 501).lot_qty)
+
+    def test_update_partial_stock_order_quantity_rejects_reservation_plan_mismatch(self) -> None:
+        order_line = self._seed_partial_stock_order_line()
+        self.db.get(ShipmentLine, 601).ship_qty = 19
+        self.db.flush()
+
+        with self.assertRaises(HTTPException) as ctx:
+            update_order_line_detail_fields(
+                self.db,
+                order_line.order_line_id,
+                OrderLineDetailUpdate(
+                    due_date=order_line.due_date,
+                    order_qty=120,
+                    memo="must stay blocked",
+                ),
+                actor="tester",
+            )
+
+        self.assertEqual(409, ctx.exception.status_code)
+        self.assertIn("예약재고와 실제 출하대기 수량이 일치하지 않아", ctx.exception.detail)
+        self.assertEqual(100, order_line.order_qty)
+        self.assertEqual(82, self.db.get(Lot, 501).lot_qty)
+
+    def test_update_partial_stock_order_quantity_requires_replan_when_production_becomes_zero(self) -> None:
+        order_line = self._seed_partial_stock_order_line()
+
+        with self.assertRaises(HTTPException) as ctx:
+            update_order_line_detail_fields(
+                self.db,
+                order_line.order_line_id,
+                OrderLineDetailUpdate(
+                    due_date=order_line.due_date,
+                    order_qty=10,
+                    memo="requires replan",
+                ),
+                actor="tester",
+            )
+
+        self.assertEqual(409, ctx.exception.status_code)
+        self.assertIn("생산 LOT가 불필요", ctx.exception.detail)
+        self.assertEqual(100, order_line.order_qty)
+        self.assertEqual(82, self.db.get(Lot, 501).lot_qty)
+
+    def test_order_line_detail_timeline_supports_legacy_quantity_change_history(self) -> None:
+        order_line = self._seed_closed_order_line_with_waiting_lot()
+        self.db.add(
+            OrderLinePlanHistory(
+                plan_history_id=502,
+                order_line_id=order_line.order_line_id,
+                plan_type="AUTO_PRODUCTION",
+                ship_target_qty=30600,
+                available_inventory_qty=0,
+                stock_ship_qty=0,
+                production_qty=30600,
+                is_short_close=False,
+                memo=(
+                    "수주수량 정정 40,000 -> 30,000; "
+                    "LOT 계획수량 정정 40,800 -> 30,600"
+                ),
+                created_by="system",
+            )
+        )
+        self.db.flush()
+
+        detail = get_order_line_detail_dto(self.db, order_line.order_line_id)
+
+        timeline_item = next(
+            item
+            for item in detail.timeline
+            if item.event_type == "ORDER_QUANTITY_CHANGED"
+        )
+        self.assertIn("수주수량 40,000 EA → 30,000 EA", timeline_item.message)
+        self.assertIn(
+            "LOT-QTY-CORRECTION 계획수량 40,800 EA → 30,600 EA",
+            timeline_item.message,
+        )
+
+    def test_order_line_detail_timeline_includes_outsource_update_and_cancel(self) -> None:
+        order_line = self._seed_closed_order_line_with_waiting_lot()
+        self.db.add_all(
+            [
+                OutsourceWorkInstruction(
+                    outsource_work_instruction_id=800,
+                    instruction_no="OWI-TIMELINE",
+                    instruction_date=date(2026, 1, 3),
+                    process_type="CUT",
+                    partner_id=1,
+                    is_bundle=False,
+                ),
+                OutsourceWorkGroup(
+                    outsource_work_group_id=800,
+                    outsource_work_instruction_id=800,
+                    group_seq="A001",
+                    process_type="CUT",
+                    is_bundle=False,
+                    sheet_qty=60,
+                    sheet_cut_count=2,
+                    representative_lot_id=501,
+                    status="CANCELED",
+                    canceled_at=datetime(2026, 1, 4, 10, 0, 0),
+                    canceled_reason="작업지시 오류",
+                ),
+                OutsourceWorkGroupItem(
+                    outsource_work_group_item_id=800,
+                    outsource_work_group_id=800,
+                    lot_id=501,
+                    cuts_per_sheet=2,
+                    expected_output_qty=120,
+                ),
+                OutsourceWorkGroupChangeLog(
+                    outsource_work_group_change_log_id=800,
+                    outsource_work_group_id=800,
+                    action_type="UPDATE",
+                    reason="발주수량 정정",
+                    before_data={
+                        "sheet_qty": 51,
+                        "sheet_cut_count": 2,
+                        "items": [{"lot_id": 501, "expected_output_qty": 102}],
+                    },
+                    after_data={
+                        "sheet_qty": 60,
+                        "sheet_cut_count": 2,
+                        "items": [{"lot_id": 501, "expected_output_qty": 120}],
+                    },
+                    created_at=datetime(2026, 1, 4, 9, 0, 0),
+                ),
+            ]
+        )
+        self.db.flush()
+
+        detail = get_order_line_detail_dto(self.db, order_line.order_line_id)
+
+        updated = next(
+            item
+            for item in detail.timeline
+            if item.event_type == "OUTSOURCE_INSTRUCTION_UPDATED"
+        )
+        self.assertEqual("외주 작업지시 수정", updated.event_label)
+        self.assertIn("LOT-QTY-CORRECTION / OWI-TIMELINE", updated.message)
+        self.assertIn("작업수량(장) 51 → 60", updated.message)
+        self.assertIn("수정사유: 발주수량 정정", updated.message)
+
+        canceled = next(
+            item
+            for item in detail.timeline
+            if item.event_type == "OUTSOURCE_INSTRUCTION_CANCELED"
+        )
+        self.assertEqual("외주 작업지시 취소", canceled.event_label)
+        self.assertIn("취소사유: 작업지시 오류", canceled.message)
+
+    def test_update_order_line_detail_fields_rejects_quantity_change_after_lot_start(self) -> None:
+        order_line = self._seed_closed_order_line_with_lots()
+
+        with self.assertRaises(HTTPException) as ctx:
+            update_order_line_detail_fields(
+                self.db,
+                order_line.order_line_id,
+                OrderLineDetailUpdate(
+                    due_date=order_line.due_date,
+                    order_qty=120,
+                    memo="blocked",
+                ),
+                actor="tester",
+            )
+
+        self.assertEqual(409, ctx.exception.status_code)
+        self.assertEqual(100, order_line.order_qty)
+
+    def test_update_order_line_detail_fields_requires_outsource_cancel_then_syncs_quantity(self) -> None:
+        order_line = self._seed_closed_order_line_with_waiting_lot()
+        self.db.add_all(
+            [
+                OutsourceWorkInstruction(
+                    outsource_work_instruction_id=700,
+                    instruction_no="OWI-QTY-CORRECTION",
+                    instruction_date=date(2026, 1, 3),
+                    process_type="CUT",
+                    partner_id=1,
+                    is_bundle=False,
+                ),
+                OutsourceWorkGroup(
+                    outsource_work_group_id=700,
+                    outsource_work_instruction_id=700,
+                    group_seq="A001",
+                    process_type="CUT",
+                    is_bundle=False,
+                    sheet_qty=51,
+                    sheet_cut_count=2,
+                    representative_lot_id=501,
+                    status=None,
+                ),
+                OutsourceWorkGroupItem(
+                    outsource_work_group_item_id=700,
+                    outsource_work_group_id=700,
+                    lot_id=501,
+                    cuts_per_sheet=2,
+                    expected_output_qty=102,
+                ),
+            ]
+        )
+        self.db.flush()
+
+        payload = OrderLineDetailUpdate(
+            due_date=order_line.due_date,
+            order_qty=120,
+            memo="quantity corrected",
+        )
+        with self.assertRaises(HTTPException) as ctx:
+            update_order_line_detail_fields(
+                self.db,
+                order_line.order_line_id,
+                payload,
+                actor="tester",
+            )
+
+        self.assertEqual(409, ctx.exception.status_code)
+        self.assertIn("외주 작업지시를 먼저 취소", ctx.exception.detail)
+
+        work_group = self.db.get(OutsourceWorkGroup, 700)
+        work_group.status = "CANCELED"
+        self.db.flush()
+
+        with patch(
+            "app.services.order_line_detail_update_service.refresh_order_line_snapshot"
+        ):
+            updated = update_order_line_detail_fields(
+                self.db,
+                order_line.order_line_id,
+                payload,
+                actor="tester",
+            )
+
+        self.assertEqual(120, updated.order_qty)
+        self.assertEqual(123, self.db.get(Lot, 501).lot_qty)
+
+    def test_update_order_line_detail_fields_invalidates_plan_before_lot_creation(self) -> None:
+        order_line = self._seed_open_decision_made_order_line()
+        self.db.add(
+            ShipmentLine(
+                shipment_line_id=600,
+                order_line_id=order_line.order_line_id,
+                product_id=order_line.product_id,
+                source_type="STOCK",
+                status="WAITING",
+                ship_qty=20,
+                shipped_qty=0,
+            )
+        )
+        self.db.flush()
+
+        with patch(
+            "app.services.order_line_detail_update_service.refresh_order_line_snapshot"
+        ):
+            updated = update_order_line_detail_fields(
+                self.db,
+                order_line.order_line_id,
+                OrderLineDetailUpdate(
+                    due_date=order_line.due_date,
+                    order_qty=120,
+                    memo="quantity corrected before lot",
+                ),
+                actor="tester",
+            )
+
+        shipment_line = self.db.get(ShipmentLine, 600)
+        self.assertEqual(120, updated.order_qty)
+        self.assertFalse(updated.decision_made)
+        self.assertEqual("CANCELED", shipment_line.status)
+        self.assertIn("처리계획 재확정 필요", shipment_line.memo)
+        quantity_change_log = self.db.execute(
+            select(OrderLineChangeLog).where(
+                OrderLineChangeLog.order_line_id == order_line.order_line_id,
+                OrderLineChangeLog.change_type == "QUANTITY_CHANGE",
+            )
+        ).scalar_one()
+        self.assertIsNone(quantity_change_log.lot_id)
+        self.assertEqual(100, quantity_change_log.before_data["order_qty"])
+        self.assertEqual(120, quantity_change_log.after_data["order_qty"])
+
+        detail = get_order_line_detail_dto(self.db, order_line.order_line_id)
+        timeline_item = next(
+            item
+            for item in detail.timeline
+            if item.event_type == "ORDER_QUANTITY_CHANGED"
+        )
+        self.assertIn("수주수량 100 EA → 120 EA", timeline_item.message)
+        self.assertNotIn("LOT 계획수량", timeline_item.message)
 
     def test_update_order_line_detail_fields_rejects_done_order_line(self) -> None:
         order_line = self._seed_closed_order_line_with_lots()
@@ -464,6 +1010,7 @@ class OrderLineServicesTests(unittest.TestCase):
                     order_qty=120,
                     memo="blocked",
                 ),
+                actor="tester",
             )
 
         self.assertEqual(409, ctx.exception.status_code)
@@ -864,6 +1411,93 @@ class OrderLineServicesTests(unittest.TestCase):
                     status="IN_PROGRESS",
                 ),
             ]
+        )
+        self.db.flush()
+        return order_line
+
+    def _seed_closed_order_line_with_waiting_lot(self) -> OrderLine:
+        order_line = OrderLine(
+            order_line_id=500,
+            order_no="SO-QTY-CORRECTION",
+            line_no=1,
+            partner_id=1,
+            product_id=1,
+            order_date=date(2026, 1, 1),
+            due_date=date(2026, 1, 31),
+            order_qty=100,
+            uom="EA",
+            status="CLOSED",
+            is_active=True,
+            decision_made=True,
+            fulfillment_mode="PRODUCTION_FIRST",
+            production_policy="ORDER_ONLY",
+        )
+        self.db.add_all(
+            [
+                order_line,
+                Lot(
+                    lot_id=501,
+                    lot_no="LOT-QTY-CORRECTION",
+                    order_line_id=500,
+                    product_id=1,
+                    lot_qty=102,
+                    uom="EA",
+                    created_date=date(2026, 1, 2),
+                    due_date=date(2026, 1, 31),
+                    status="WAITING",
+                ),
+                LotStep(
+                    lot_step_id=501,
+                    lot_id=501,
+                    step_seq=10,
+                    process_id=1,
+                    process_code="CUT",
+                    process_name="재단",
+                    process_type="INTERNAL",
+                    status="WAITING",
+                ),
+                OrderLinePlanHistory(
+                    plan_history_id=501,
+                    order_line_id=500,
+                    plan_type="AUTO_PRODUCTION",
+                    ship_target_qty=102,
+                    available_inventory_qty=0,
+                    stock_ship_qty=0,
+                    production_qty=102,
+                    is_short_close=False,
+                    memo="initial plan",
+                    created_by="system",
+                ),
+            ]
+        )
+        self.db.flush()
+        return order_line
+
+    def _seed_partial_stock_order_line(self) -> OrderLine:
+        order_line = self._seed_closed_order_line_with_waiting_lot()
+        order_line.fulfillment_mode = "INVENTORY_FIRST"
+
+        lot = self.db.get(Lot, 501)
+        lot.lot_qty = 82
+
+        plan = self.db.get(OrderLinePlanHistory, 501)
+        plan.plan_type = "PARTIAL_STOCK_PLUS_PRODUCTION"
+        plan.available_inventory_qty = 20
+        plan.stock_ship_qty = 20
+        plan.production_qty = 82
+        plan.memo = "initial partial-stock plan"
+
+        self.db.add(
+            ShipmentLine(
+                shipment_line_id=601,
+                order_line_id=order_line.order_line_id,
+                product_id=order_line.product_id,
+                source_type="STOCK",
+                status="WAITING",
+                ship_qty=20,
+                shipped_qty=0,
+                memo="reserved stock",
+            )
         )
         self.db.flush()
         return order_line

@@ -23,6 +23,23 @@ Business-critical indexes must be represented in both Alembic history and SQLAlc
 
 Migration `29d3e4f5a6b7` replaces the plan-history index. Standard index creation briefly takes a write lock on that table, so production rollout should apply it during the planned V2 maintenance window. The local database had 159 plan-history rows when the migration was verified.
 
+## Order-Line Change Audit
+
+### `order_line_change_log`
+
+Order-detail edits use an append-only audit table instead of encoding new audit data in plan-history memo text.
+
+- `change_type` is constrained to `QUANTITY_CHANGE`, `DUE_DATE_CHANGE`, or `MEMO_CHANGE`.
+- `before_data` and `after_data` retain the typed JSONB snapshots required to render the change without reconstructing it from the current row.
+- `lot_id` is nullable because an order quantity may be corrected before a primary LOT exists. When present, it links the quantity change to the affected LOT; deleting that LOT sets the reference to null without deleting the order audit row.
+- `created_by` is required and stores the authenticated login id supplied by the API endpoint.
+- The order-line/time index supports the full order-detail timeline, and the LOT/time index supports LOT-specific quantity history.
+- Existing plan-history memo formats remain read-only compatibility sources. New quantity changes are written to this table and use plan history only for the recalculated fulfillment-plan snapshot.
+
+The existing `outsource_work_group_change_log.action_type` is constrained to `UPDATE` or `CANCEL`. Both actions store before/after snapshots, the required reason, and the authenticated login id. Legacy canceled work groups without a `CANCEL` log continue to use `canceled_at` and `canceled_reason` as a read fallback.
+
+Migration `3e4f5a6b7c8d` must be applied before deploying the API code that reads `order_line_change_log`. It creates the new table and briefly locks `outsource_work_group_change_log` while adding its action-type CHECK constraint; no existing audit rows are rewritten or deleted.
+
 ## Authentication Session Version
 
 The `users.auth_version` column is the server-side version of a user's active authentication context.

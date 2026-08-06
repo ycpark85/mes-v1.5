@@ -39,7 +39,7 @@
   <text class="title" x="980" y="70">owg_change_log</text>
   <text class="text" x="980" y="98">PK change_log_id</text>
   <text class="text" x="980" y="120">FK work_group_id</text>
-  <text class="text" x="980" y="142">action_type, reason</text>
+  <text class="text" x="980" y="142">action_type UPDATE/CANCEL, reason</text>
   <text class="text" x="980" y="164">before/after JSONB</text>
 
   <rect class="box" x="380" y="250" width="280" height="135"/>
@@ -58,6 +58,12 @@
   <text class="title" x="1000" y="280">order_line</text>
   <text class="text" x="1000" y="308">PK order_line_id</text>
   <text class="text" x="1000" y="330">partner_id, product_id</text>
+
+  <rect class="box" x="930" y="380" width="220" height="105"/>
+  <text class="title" x="950" y="410">order_line_change_log</text>
+  <text class="text" x="950" y="438">FK order_line_id, optional lot_id</text>
+  <text class="text" x="950" y="460">change_type, before/after JSONB</text>
+  <text class="text" x="950" y="482">created_by, created_at</text>
 
   <rect class="read" x="40" y="250" width="300" height="150"/>
   <text class="title" x="60" y="280">production_progress_snapshot</text>
@@ -125,6 +131,8 @@
   <path class="line" d="M660 320 L740 320"/>
   <path class="line" d="M830 182 L830 260"/>
   <path class="line" d="M920 312 L980 312"/>
+  <path class="line" d="M1065 355 L1040 380"/>
+  <path class="line" d="M920 330 L930 420"/>
   <path class="line" d="M545 540 L760 365"/>
   <path class="line" d="M195 560 L430 600"/>
   <path class="line" d="M960 552 L980 552"/>

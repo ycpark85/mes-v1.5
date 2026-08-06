@@ -90,6 +90,24 @@ def confirm_shipment_lines_in_session(
 ) -> ShipmentConfirmResult:
     target_ids = sorted(set(shipment_line_ids))
 
+    # Keep the same order-line -> shipment-line lock order used by quantity changes.
+    order_line_ids = sorted(
+        db.execute(
+            select(ShipmentLine.order_line_id)
+            .where(ShipmentLine.shipment_line_id.in_(target_ids))
+            .distinct()
+        )
+        .scalars()
+        .all()
+    )
+    if order_line_ids:
+        db.execute(
+            select(OrderLine.order_line_id)
+            .where(OrderLine.order_line_id.in_(order_line_ids))
+            .order_by(OrderLine.order_line_id.asc())
+            .with_for_update()
+        ).all()
+
     lines = (
         db.execute(
             select(ShipmentLine)

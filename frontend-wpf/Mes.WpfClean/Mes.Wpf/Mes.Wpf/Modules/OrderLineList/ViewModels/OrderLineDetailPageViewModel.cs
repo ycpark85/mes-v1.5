@@ -35,6 +35,7 @@ namespace Mes.Wpf.Modules.OrderLineList.ViewModels
         private DateTime _orderDate;
         private DateTime _dueDate;
         private int _orderQty;
+        private int _loadedOrderQty;
         private string _uom = string.Empty;
 
         private string? _customerPo;
@@ -315,6 +316,7 @@ namespace Mes.Wpf.Modules.OrderLineList.ViewModels
             OrderDate = dto.OrderDate;
             DueDate = dto.DueDate;
             OrderQty = dto.OrderQty;
+            _loadedOrderQty = dto.OrderQty;
             Uom = dto.Uom;
 
             CustomerPo = dto.CustomerPo;
@@ -374,6 +376,18 @@ namespace Mes.Wpf.Modules.OrderLineList.ViewModels
             {
                 _messageService.ShowWarning("수주수량은 0보다 커야 합니다.");
                 return;
+            }
+
+            if (OrderQty != _loadedOrderQty)
+            {
+                var impactMessage = Lots.Count == 0
+                    ? $"수주수량을 {_loadedOrderQty:N0}에서 {OrderQty:N0}(으)로 변경합니다.\n기존 처리계획은 해제되며 다시 확인해야 합니다.\n계속하시겠습니까?"
+                    : $"수주수량을 {_loadedOrderQty:N0}에서 {OrderQty:N0}(으)로 변경합니다.\n작업이 시작되지 않은 LOT라면 처리계획과 LOT 수량도 함께 변경됩니다.\n부분재고 계획은 기존 예약재고를 유지하고 부족 생산량을 다시 계산합니다.\n계속하시겠습니까?";
+
+                if (!_messageService.Confirm(impactMessage, "수주수량 변경 확인"))
+                {
+                    return;
+                }
             }
 
             IsLoading = true;

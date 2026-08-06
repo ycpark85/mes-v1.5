@@ -19,6 +19,18 @@ from app.schemas.order_line_detail import (
     OrderLineDetailLotDto,
     OrderLineTimelineItemDto,
 )
+from app.services.order_quantity_change_history import parse_order_quantity_change_memo
+from app.services.order_line_change_timeline import (
+    OrderLineChangeTimelineEvent,
+    get_order_line_change_timeline_events,
+)
+from app.services.order_line_change_history_service import (
+    QUANTITY_CHANGE_PLAN_MEMO_PREFIX,
+)
+from app.services.outsource_work_timeline import (
+    OutsourceWorkTimelineEvent,
+    get_outsource_work_timeline_events,
+)
 
 
 def get_order_line_detail_dto(
@@ -35,6 +47,17 @@ def get_order_line_detail_dto(
     product = db.get(Product, order_line.product_id)
     lots = _load_order_line_lots(db, order_line_id)
     plan_histories = _load_plan_histories(db, order_line_id) if include_plan_history else []
+    lot_no_by_id = {lot.lot_id: lot.lot_no for lot in lots}
+    order_change_events = get_order_line_change_timeline_events(
+        db,
+        order_line_id=order_line_id,
+        uom=order_line.uom,
+        lot_no_by_id=lot_no_by_id,
+    )
+    outsource_events = get_outsource_work_timeline_events(
+        db,
+        lot_ids=[lot.lot_id for lot in lots],
+    )
 
     return build_order_line_detail_dto(
         order_line=order_line,
@@ -42,6 +65,8 @@ def get_order_line_detail_dto(
         product=product,
         lots=lots,
         plan_histories=plan_histories,
+        order_change_events=order_change_events,
+        outsource_events=outsource_events,
     )
 
 
@@ -80,8 +105,12 @@ def build_order_line_detail_dto(
     product: Product | None,
     lots: list[Lot],
     plan_histories: list[OrderLinePlanHistory] | None = None,
+    order_change_events: list[OrderLineChangeTimelineEvent] | None = None,
+    outsource_events: list[OutsourceWorkTimelineEvent] | None = None,
 ) -> OrderLineDetailDto:
     plan_histories = plan_histories or []
+    order_change_events = order_change_events or []
+    outsource_events = outsource_events or []
     has_any_lot = len(lots) > 0
     has_base_lot = any(l.parent_lot_id is None for l in lots)
 
@@ -105,7 +134,22 @@ def build_order_line_detail_dto(
     lot_items = [_build_lot_detail_item(lot) for lot in lots]
 
     timeline = _build_detail_timeline(order_line, lots)
-    timeline.extend(_build_plan_history_timeline_items(plan_histories))
+    primary_lot_ids = [lot.lot_id for lot in lots if lot.parent_lot_id is None]
+    timeline.extend(
+        _build_plan_history_timeline_items(
+            plan_histories,
+            uom=order_line.uom,
+            lot_no_by_id={lot.lot_id: lot.lot_no for lot in lots},
+            legacy_lot_id=primary_lot_ids[0] if len(primary_lot_ids) == 1 else None,
+        )
+    )
+    timeline.extend(_build_order_change_timeline_items(order_change_events))
+    timeline.extend(
+        _build_outsource_timeline_items(
+            outsource_events,
+            lot_no_by_id={lot.lot_id: lot.lot_no for lot in lots},
+        )
+    )
     timeline.sort(key=lambda x: _timeline_sort_key(x.event_at))
 
     return OrderLineDetailDto(
@@ -213,10 +257,42 @@ def _to_plan_timeline_message(history: OrderLinePlanHistory) -> str:
 
 def _build_plan_history_timeline_items(
     plan_histories: list[OrderLinePlanHistory],
+    *,
+    uom: str,
+    lot_no_by_id: dict[int, str],
+    legacy_lot_id: int | None,
 ) -> list[OrderLineTimelineItemDto]:
     items: list[OrderLineTimelineItemDto] = []
 
     for history in plan_histories:
+        if history.memo and history.memo.startswith(QUANTITY_CHANGE_PLAN_MEMO_PREFIX):
+            continue
+
+        quantity_change = parse_order_quantity_change_memo(history.memo)
+        if quantity_change is not None:
+            resolved_lot_id = quantity_change.lot_id or legacy_lot_id
+            lot_label = (
+                lot_no_by_id.get(resolved_lot_id, f"LOT ID {resolved_lot_id}")
+                if resolved_lot_id is not None
+                else "LOT"
+            )
+            items.append(
+                OrderLineTimelineItemDto(
+                    event_type="ORDER_QUANTITY_CHANGED",
+                    event_label="수주수량 정정",
+                    event_at=history.created_at,
+                    message=(
+                        f"수주수량 {quantity_change.old_order_qty:,} {uom} → "
+                        f"{quantity_change.new_order_qty:,} {uom} / "
+                        f"{lot_label} 계획수량 {quantity_change.old_lot_qty:,} {uom} → "
+                        f"{quantity_change.new_lot_qty:,} {uom}"
+                    ),
+                    ref_type="ORDER_LINE_PLAN_HISTORY",
+                    ref_id=history.plan_history_id,
+                )
+            )
+            continue
+
         message = _to_plan_timeline_message(history)
 
         if history.memo:
@@ -234,6 +310,55 @@ def _build_plan_history_timeline_items(
         )
 
     return items
+
+
+def _build_outsource_timeline_items(
+    events: list[OutsourceWorkTimelineEvent],
+    *,
+    lot_no_by_id: dict[int, str],
+) -> list[OrderLineTimelineItemDto]:
+    items: list[OrderLineTimelineItemDto] = []
+    for event in events:
+        lot_label = lot_no_by_id.get(event.lot_id, f"LOT ID {event.lot_id}")
+        message = (
+            f"{lot_label} / {event.instruction_no} / "
+            f"{event.process_type} / {event.group_seq}"
+        )
+        if event.details:
+            message = f"{message} / {event.details}"
+        if event.reason:
+            reason_label = "취소사유" if event.status == "CANCELED" else "수정사유"
+            message = f"{message} / {reason_label}: {event.reason}"
+        if event.actor:
+            message = f"{message} / 처리자: {event.actor}"
+
+        items.append(
+            OrderLineTimelineItemDto(
+                event_type=event.event_type,
+                event_label=event.title,
+                event_at=event.event_at,
+                message=message,
+                ref_type=event.ref_type,
+                ref_id=event.ref_id,
+            )
+        )
+    return items
+
+
+def _build_order_change_timeline_items(
+    events: list[OrderLineChangeTimelineEvent],
+) -> list[OrderLineTimelineItemDto]:
+    return [
+        OrderLineTimelineItemDto(
+            event_type=event.event_type,
+            event_label=event.title,
+            event_at=event.event_at,
+            message=f"{event.summary} / 처리자: {event.actor}",
+            ref_type="ORDER_LINE_CHANGE_LOG",
+            ref_id=event.ref_id,
+        )
+        for event in events
+    ]
 
 
 def _build_detail_timeline(

@@ -33,6 +33,15 @@ from app.schemas.lot import (
     LotTraceProgressOut,
     LotTraceTimelineItemOut,
 )
+from app.services.order_quantity_change_history import parse_order_quantity_change_memo
+from app.services.order_line_change_timeline import (
+    OrderLineChangeTimelineEvent,
+    get_order_line_change_timeline_events,
+)
+from app.services.outsource_work_timeline import (
+    OutsourceWorkTimelineEvent,
+    get_outsource_work_timeline_events,
+)
 
 
 def get_lot_trace_detail_for_lot(
@@ -56,10 +65,25 @@ def get_lot_trace_detail_for_lot(
         raise HTTPException(status_code=404, detail="LOT not found")
 
     lot, order_line, product, partner = row
-    latest_plan_history = _get_latest_plan_history(db, order_line.order_line_id)
+    plan_histories = _get_plan_histories(db, order_line.order_line_id)
+    latest_plan_history = plan_histories[-1] if plan_histories else None
+    order_change_events = get_order_line_change_timeline_events(
+        db,
+        order_line_id=order_line.order_line_id,
+        uom=order_line.uom,
+        lot_no_by_id={lot.lot_id: lot.lot_no},
+    )
+    legacy_quantity_change_lot_id = _get_only_primary_lot_id(
+        db,
+        order_line.order_line_id,
+    )
     current_stock_qty = _get_current_stock_qty(db, product.product_id)
     parent_lot_no = _get_parent_lot_no(db, lot)
     outsource_works = _build_outsource_works(db, lot_id)
+    outsource_change_events = get_outsource_work_timeline_events(
+        db,
+        lot_ids=[lot_id],
+    )
     inspection, inspection_rounds = _build_inspection_details(
         db,
         lot_id,
@@ -69,7 +93,11 @@ def get_lot_trace_detail_for_lot(
         lot=lot,
         parent_lot_no=parent_lot_no,
         outsource_works=outsource_works,
+        outsource_change_events=outsource_change_events,
         inspection_rounds=inspection_rounds,
+        plan_histories=plan_histories,
+        order_change_events=order_change_events,
+        legacy_quantity_change_lot_id=legacy_quantity_change_lot_id,
     )
 
     return LotTraceDetailOut(
@@ -147,22 +175,38 @@ def get_lot_trace_detail_for_lot(
     )
 
 
-def _get_latest_plan_history(
+def _get_plan_histories(
     db: Session,
     order_line_id: int,
-) -> OrderLinePlanHistory | None:
+) -> list[OrderLinePlanHistory]:
     return (
         db.execute(
             select(OrderLinePlanHistory)
             .where(OrderLinePlanHistory.order_line_id == order_line_id)
             .order_by(
-                OrderLinePlanHistory.created_at.desc(),
-                OrderLinePlanHistory.plan_history_id.desc(),
+                OrderLinePlanHistory.created_at.asc(),
+                OrderLinePlanHistory.plan_history_id.asc(),
             )
-            .limit(1)
         )
-        .scalar_one_or_none()
+        .scalars()
+        .all()
     )
+
+
+def _get_only_primary_lot_id(db: Session, order_line_id: int) -> int | None:
+    primary_lot_ids = (
+        db.execute(
+            select(Lot.lot_id)
+            .where(
+                Lot.order_line_id == order_line_id,
+                Lot.parent_lot_id.is_(None),
+            )
+            .order_by(Lot.lot_id.asc())
+        )
+        .scalars()
+        .all()
+    )
+    return primary_lot_ids[0] if len(primary_lot_ids) == 1 else None
 
 
 def _get_current_stock_qty(db: Session, product_id: int) -> int:
@@ -397,7 +441,11 @@ def _build_lot_timeline(
     lot: Lot,
     parent_lot_no: str | None,
     outsource_works: list[LotTraceOutsourceWorkOut],
+    outsource_change_events: list[OutsourceWorkTimelineEvent],
     inspection_rounds: list[LotTraceInspectionRoundOut],
+    plan_histories: list[OrderLinePlanHistory],
+    order_change_events: list[OrderLineChangeTimelineEvent],
+    legacy_quantity_change_lot_id: int | None,
 ) -> list[LotTraceTimelineItemOut]:
     lot_kind = "재작업 LOT" if lot.parent_lot_id else "기본 LOT"
     lot_summary = f"{lot.lot_no} / {lot_kind} / 계획수량 {int(lot.lot_qty):,} {lot.uom}"
@@ -416,6 +464,55 @@ def _build_lot_timeline(
             ref_id=lot.lot_id,
         )
     ]
+
+    for history in plan_histories:
+        quantity_change = parse_order_quantity_change_memo(history.memo)
+        if quantity_change is None:
+            continue
+
+        resolved_lot_id = (
+            quantity_change.lot_id
+            if quantity_change.lot_id is not None
+            else legacy_quantity_change_lot_id
+        )
+        if resolved_lot_id != lot.lot_id:
+            continue
+
+        items.append(
+            LotTraceTimelineItemOut(
+                event_type="LOT_QUANTITY_CHANGED",
+                event_at=history.created_at,
+                title="수량 정정",
+                summary=(
+                    f"수주수량 {quantity_change.old_order_qty:,} {lot.uom} → "
+                    f"{quantity_change.new_order_qty:,} {lot.uom} / "
+                    f"LOT 계획수량 {quantity_change.old_lot_qty:,} {lot.uom} → "
+                    f"{quantity_change.new_lot_qty:,} {lot.uom}"
+                ),
+                status="DONE",
+                ref_type="ORDER_LINE_PLAN_HISTORY",
+                ref_id=history.plan_history_id,
+            )
+        )
+
+    for event in order_change_events:
+        if event.lot_id != lot.lot_id:
+            continue
+        items.append(
+            LotTraceTimelineItemOut(
+                event_type=(
+                    "LOT_QUANTITY_CHANGED"
+                    if event.event_type == "ORDER_QUANTITY_CHANGED"
+                    else event.event_type
+                ),
+                event_at=event.event_at,
+                title="수량 정정",
+                summary=f"{event.summary} / 처리자: {event.actor}",
+                status="DONE",
+                ref_type="ORDER_LINE_CHANGE_LOG",
+                ref_id=event.ref_id,
+            )
+        )
 
     for work in outsource_works:
         instruction_at = work.instruction_created_at
@@ -481,6 +578,27 @@ def _build_lot_timeline(
                     ref_id=work.outsource_work_group_id,
                 )
             )
+
+    for event in outsource_change_events:
+        event_summary = (
+            f"{event.instruction_no} / {event.process_type} / {event.group_seq}"
+        )
+        if event.details:
+            event_summary = f"{event_summary} / {event.details}"
+        if event.actor:
+            event_summary = f"{event_summary} / 처리자: {event.actor}"
+        items.append(
+            LotTraceTimelineItemOut(
+                event_type=event.event_type,
+                event_at=event.event_at,
+                title=event.title,
+                summary=event_summary,
+                status=event.status,
+                memo=event.reason,
+                ref_type=event.ref_type,
+                ref_id=event.ref_id,
+            )
+        )
 
     for round_item in inspection_rounds:
         if round_item.inspection_result_id is not None:

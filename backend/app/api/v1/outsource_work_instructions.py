@@ -7,7 +7,9 @@ from fastapi import APIRouter, Depends, File, Query, UploadFile, status as http_
 from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy.orm import Session
 
+from app.core.auth import get_current_user
 from app.db.session import get_db
+from app.models.user import User
 import app.services.bohyun_outsource_service as bohyun_outsource_service
 from app.services.outsource_purchase_order_excel import (
     build_purchase_order_excel_download,
@@ -139,8 +141,14 @@ def update_outsource_work_group(
     outsource_work_group_id: int,
     payload: OutsourceWorkGroupUpdateIn,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    work_group = update_work_group_service(db, outsource_work_group_id, payload)
+    work_group = update_work_group_service(
+        db,
+        outsource_work_group_id,
+        payload,
+        actor=current_user.login_id,
+    )
     return _commit_work_group_change(db, work_group)
 
 
@@ -149,8 +157,14 @@ def cancel_outsource_work_group(
     outsource_work_group_id: int,
     payload: OutsourceWorkGroupCancelIn,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    work_group = cancel_work_group_service(db, outsource_work_group_id, payload)
+    work_group = cancel_work_group_service(
+        db,
+        outsource_work_group_id,
+        payload,
+        actor=current_user.login_id,
+    )
     return _commit_work_group_change(db, work_group)
 
 

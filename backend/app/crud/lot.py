@@ -24,7 +24,7 @@ def _build_lot_list_status(
     *,
     has_active_outsource_work: bool = False,
 ) -> tuple[str, str]:
-    if lot_status == "CANCELED" or inspection_status == "CANCELED":
+    if lot_status == "CANCELED":
         return "CANCELED", "취소"
 
     if lot_status == "DONE" or inspection_status == "DONE":
@@ -150,7 +150,7 @@ class LotCRUD:
                         active_outsource_lot_subq.c.lot_id.is_(None),
                         or_(
                             latest_inspection_subq.c.inspection_status.is_(None),
-                            latest_inspection_subq.c.inspection_status == "WAITING",
+                            latest_inspection_subq.c.inspection_status.in_(("WAITING", "CANCELED")),
                         ),
                     )
                 )
@@ -161,7 +161,7 @@ class LotCRUD:
                         Lot.status.notin_(("DONE", "CANCELED")),
                         or_(
                             latest_inspection_subq.c.inspection_status.is_(None),
-                            latest_inspection_subq.c.inspection_status == "WAITING",
+                            latest_inspection_subq.c.inspection_status.in_(("WAITING", "CANCELED")),
                         ),
                         or_(
                             Lot.status == "IN_PROGRESS",
@@ -186,12 +186,7 @@ class LotCRUD:
                 )
 
             elif status == "CANCELED":
-                conds.append(
-                    or_(
-                        Lot.status == "CANCELED",
-                        latest_inspection_subq.c.inspection_status == "CANCELED",
-                    )
-                )
+                conds.append(Lot.status == "CANCELED")
 
             else:
                 conds.append(Lot.status == status)    

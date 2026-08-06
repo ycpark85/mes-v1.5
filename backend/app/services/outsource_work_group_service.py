@@ -4,11 +4,12 @@ from datetime import date, datetime
 from decimal import Decimal
 
 from fastapi import HTTPException
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.core.time import utc_now
 from app.models.inspection_schedule import InspectionSchedule
+from app.models.lot import Lot
 from app.models.outsource_work_group import OutsourceWorkGroup
 from app.models.outsource_work_group_change_log import OutsourceWorkGroupChangeLog
 from app.models.outsource_work_group_item import OutsourceWorkGroupItem
@@ -29,7 +30,10 @@ def update_work_group(
     db: Session,
     outsource_work_group_id: int,
     payload: OutsourceWorkGroupUpdateIn,
+    *,
+    actor: str,
 ) -> OutsourceWorkGroup:
+    normalized_actor = _normalize_actor(actor)
     work_group = _get_work_group_for_update(db, outsource_work_group_id)
 
     update_block_reason = get_update_block_reason(db, work_group)
@@ -79,6 +83,7 @@ def update_work_group(
             reason=reason,
             before_data=before_data,
             after_data=after_data,
+            created_by=normalized_actor,
         )
     )
 
@@ -91,7 +96,10 @@ def cancel_work_group(
     db: Session,
     outsource_work_group_id: int,
     payload: OutsourceWorkGroupCancelIn,
+    *,
+    actor: str,
 ) -> OutsourceWorkGroup:
+    normalized_actor = _normalize_actor(actor)
     work_group = _get_work_group_for_update(db, outsource_work_group_id)
 
     cancel_block_reason = get_cancel_block_reason(db, work_group)
@@ -102,6 +110,7 @@ def cancel_work_group(
     if not reason:
         raise HTTPException(status_code=422, detail="Cancel reason is required")
 
+    before_data = _build_work_group_change_snapshot(db, work_group)
     _cancel_linked_inspection_schedules(db, work_group)
 
     work_group.status = OUTSOURCE_WORK_GROUP_STATUS_CANCELED
@@ -138,6 +147,24 @@ def cancel_work_group(
         for instruction_item in instruction_items:
             instruction_item.is_active = False
 
+        _reset_canceled_work_group_lots_to_waiting(
+            db,
+            group_lot_ids,
+            canceled_work_group_id=work_group.outsource_work_group_id,
+        )
+
+    after_data = _build_work_group_change_snapshot(db, work_group)
+    db.add(
+        OutsourceWorkGroupChangeLog(
+            outsource_work_group_id=work_group.outsource_work_group_id,
+            action_type="CANCEL",
+            reason=reason,
+            before_data=before_data,
+            after_data=after_data,
+            created_by=normalized_actor,
+        )
+    )
+
     refresh_order_line_snapshots_for_work_groups(db, [work_group.outsource_work_group_id])
     db.flush()
     return work_group
@@ -163,6 +190,70 @@ def _cancel_linked_inspection_schedules(
 
     for schedule in schedules:
         schedule.status = "CANCELED"
+
+
+def _reset_canceled_work_group_lots_to_waiting(
+    db: Session,
+    lot_ids: list[int],
+    *,
+    canceled_work_group_id: int,
+) -> None:
+    lots = (
+        db.execute(
+            select(Lot)
+            .where(Lot.lot_id.in_(lot_ids))
+            .with_for_update()
+        )
+        .scalars()
+        .all()
+    )
+
+    for lot in lots:
+        if lot.status not in {"WAITING", "RECEIVED"}:
+            continue
+
+        active_outsource_exists = (
+            db.execute(
+                select(OutsourceWorkGroupItem.outsource_work_group_item_id)
+                .join(
+                    OutsourceWorkGroup,
+                    OutsourceWorkGroup.outsource_work_group_id
+                    == OutsourceWorkGroupItem.outsource_work_group_id,
+                )
+                .where(
+                    OutsourceWorkGroupItem.lot_id == lot.lot_id,
+                    OutsourceWorkGroup.outsource_work_group_id
+                    != canceled_work_group_id,
+                    (
+                        OutsourceWorkGroup.status.is_(None)
+                        | (OutsourceWorkGroup.status != OUTSOURCE_WORK_GROUP_STATUS_CANCELED)
+                    ),
+                )
+                .limit(1)
+            ).scalar_one_or_none()
+            is not None
+        )
+        if active_outsource_exists:
+            continue
+
+        active_inspection_exists = (
+            db.execute(
+                select(InspectionSchedule.inspection_schedule_id)
+                .where(
+                    InspectionSchedule.lot_id == lot.lot_id,
+                    InspectionSchedule.status != "CANCELED",
+                    or_(
+                        InspectionSchedule.outsource_work_group_id.is_(None),
+                        InspectionSchedule.outsource_work_group_id
+                        != canceled_work_group_id,
+                    ),
+                )
+                .limit(1)
+            ).scalar_one_or_none()
+            is not None
+        )
+        if not active_inspection_exists:
+            lot.status = "WAITING"
 
 
 def _get_work_group_for_update(
@@ -202,6 +293,9 @@ def _build_work_group_change_snapshot(
     )
     return {
         "outsource_work_group_id": work_group.outsource_work_group_id,
+        "status": work_group.status,
+        "canceled_at": _json_value(work_group.canceled_at),
+        "canceled_reason": work_group.canceled_reason,
         "sheet_qty": work_group.sheet_qty,
         "length_m": _json_value(work_group.length_m),
         "sheet_cut_count": work_group.sheet_cut_count,
@@ -229,3 +323,10 @@ def _json_value(value):
 
 def _q2(value: Decimal | int | float | str | None) -> Decimal:
     return Decimal(value or 0).quantize(Decimal("0.01"))
+
+
+def _normalize_actor(actor: str) -> str:
+    normalized_actor = actor.strip()
+    if not normalized_actor:
+        raise ValueError("actor is required for outsource work-group history")
+    return normalized_actor

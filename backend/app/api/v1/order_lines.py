@@ -8,8 +8,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status as http_sta
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.core.auth import get_current_user
 from app.crud.order_line import order_line_crud
 from app.db.session import get_db, set_local_statement_timeout
+from app.models.user import User
 from app.schemas.lot_create_context import LotCreateContextDto
 from app.schemas.order_line import (
     OrderLineBaseLotCreateResult,
@@ -200,9 +202,19 @@ def list_order_lines(
 
 
 @router.patch("/{order_line_id}", response_model=OrderLineOut)
-def update_order_line(order_line_id: int, payload: OrderLineUpdate, db: Session = Depends(get_db)):
+def update_order_line(
+    order_line_id: int,
+    payload: OrderLineUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     try:
-        obj = update_order_line_fields(db, order_line_id, payload)
+        obj = update_order_line_fields(
+            db,
+            order_line_id,
+            payload,
+            actor=current_user.login_id,
+        )
         db.commit()
     except HTTPException:
         db.rollback()
@@ -283,9 +295,15 @@ def update_order_line_detail(
     order_line_id: int,
     payload: OrderLineDetailUpdate,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     try:
-        order_line = update_order_line_detail_fields(db, order_line_id, payload)
+        order_line = update_order_line_detail_fields(
+            db,
+            order_line_id,
+            payload,
+            actor=current_user.login_id,
+        )
         db.commit()
         db.refresh(order_line)
     except HTTPException:

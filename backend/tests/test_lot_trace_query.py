@@ -5,6 +5,7 @@ from datetime import date, datetime
 
 from fastapi import HTTPException
 from sqlalchemy import BigInteger, create_engine
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.compiler import compiles
 from sqlalchemy.orm import sessionmaker
 
@@ -18,8 +19,10 @@ from app.models.inspection_result import InspectionResult
 from app.models.inspection_schedule import InspectionSchedule
 from app.models.lot import Lot
 from app.models.order_line import OrderLine
+from app.models.order_line_change_log import OrderLineChangeLog
 from app.models.order_line_plan_history import OrderLinePlanHistory
 from app.models.outsource_work_group import OutsourceWorkGroup
+from app.models.outsource_work_group_change_log import OutsourceWorkGroupChangeLog
 from app.models.outsource_work_group_item import OutsourceWorkGroupItem
 from app.models.outsource_work_instruction import OutsourceWorkInstruction
 from app.models.partner import Partner
@@ -27,11 +30,17 @@ from app.models.product import Product
 from app.models.product_inventory import ProductInventory
 from app.models.routing_template import RoutingTemplate
 from app.services.lot_trace_query import get_lot_trace_detail_for_lot
+from app.services.order_quantity_change_history import build_order_quantity_change_memo
 
 
 @compiles(BigInteger, "sqlite")
 def _compile_big_integer_for_sqlite(_type, compiler, **kw):
     return "INTEGER"
+
+
+@compiles(JSONB, "sqlite")
+def _compile_jsonb_for_sqlite(_type, compiler, **kw):
+    return "JSON"
 
 
 TEST_TABLE_NAMES = [
@@ -40,12 +49,14 @@ TEST_TABLE_NAMES = [
     "routing_template",
     "product",
     "order_line",
+    "order_line_change_log",
     "order_line_plan_history",
     "lot",
     "product_inventory",
     "outsource_work_instruction",
     "outsource_work_group",
     "outsource_work_group_item",
+    "outsource_work_group_change_log",
     "inspection_schedule",
     "inspection_result",
     "defect_type",
@@ -152,6 +163,202 @@ class LotTraceQueryTests(unittest.TestCase):
         self.assertEqual("재작업 LOT 생성", created.title)
         self.assertIn("부모 LOT-A", created.summary)
         self.assertEqual("표면 주름 재작업", created.memo)
+
+    def test_lot_trace_timeline_includes_quantity_change(self) -> None:
+        self._seed_full_trace()
+        self.db.add_all(
+            [
+                OrderLinePlanHistory(
+                    plan_history_id=3,
+                    order_line_id=1,
+                    plan_type="AUTO_PRODUCTION",
+                    ship_target_qty=123,
+                    available_inventory_qty=0,
+                    stock_ship_qty=0,
+                    production_qty=123,
+                    is_short_close=False,
+                    memo=build_order_quantity_change_memo(
+                        lot_id=1,
+                        old_order_qty=100,
+                        new_order_qty=120,
+                        old_lot_qty=80,
+                        new_lot_qty=123,
+                    ),
+                    created_at=datetime(2026, 7, 1, 11, 0, 0),
+                ),
+                OrderLinePlanHistory(
+                    plan_history_id=4,
+                    order_line_id=1,
+                    plan_type="AUTO_PRODUCTION",
+                    ship_target_qty=125,
+                    available_inventory_qty=0,
+                    stock_ship_qty=0,
+                    production_qty=125,
+                    is_short_close=False,
+                    memo=build_order_quantity_change_memo(
+                        lot_id=999,
+                        old_order_qty=120,
+                        new_order_qty=122,
+                        old_lot_qty=123,
+                        new_lot_qty=125,
+                    ),
+                    created_at=datetime(2026, 7, 1, 12, 0, 0),
+                ),
+            ]
+        )
+        self.db.commit()
+
+        result = get_lot_trace_detail_for_lot(self.db, 1)
+
+        quantity_changes = [
+            item
+            for item in result.timeline
+            if item.event_type == "LOT_QUANTITY_CHANGED"
+        ]
+        self.assertEqual(1, len(quantity_changes))
+        timeline_item = quantity_changes[0]
+        self.assertEqual("수량 정정", timeline_item.title)
+        self.assertIn("수주수량 100 EA → 120 EA", timeline_item.summary)
+        self.assertIn("LOT 계획수량 80 EA → 123 EA", timeline_item.summary)
+        self.assertEqual("DONE", timeline_item.status)
+        self.assertEqual("ORDER_LINE_PLAN_HISTORY", timeline_item.ref_type)
+        self.assertEqual(3, timeline_item.ref_id)
+
+    def test_lot_trace_timeline_uses_order_line_change_log_for_new_quantity_change(self) -> None:
+        self._seed_full_trace()
+        self.db.add(
+            OrderLineChangeLog(
+                order_line_change_log_id=1,
+                order_line_id=1,
+                lot_id=1,
+                change_type="QUANTITY_CHANGE",
+                before_data={"order_qty": 100, "lot_qty": 80},
+                after_data={"order_qty": 120, "lot_qty": 123},
+                created_by="tester",
+                created_at=datetime(2026, 7, 1, 11, 0, 0),
+            )
+        )
+        self.db.commit()
+
+        result = get_lot_trace_detail_for_lot(self.db, 1)
+
+        timeline_item = next(
+            item
+            for item in result.timeline
+            if item.event_type == "LOT_QUANTITY_CHANGED"
+        )
+        self.assertIn("수주수량 100 EA → 120 EA", timeline_item.summary)
+        self.assertIn("LOT-A 계획수량 80 EA → 123 EA", timeline_item.summary)
+        self.assertIn("처리자: tester", timeline_item.summary)
+        self.assertEqual("ORDER_LINE_CHANGE_LOG", timeline_item.ref_type)
+        self.assertEqual(1, timeline_item.ref_id)
+
+    def test_lot_trace_timeline_supports_legacy_quantity_change_history(self) -> None:
+        self._seed_full_trace()
+        self.db.add(
+            OrderLinePlanHistory(
+                plan_history_id=3,
+                order_line_id=1,
+                plan_type="AUTO_PRODUCTION",
+                ship_target_qty=60,
+                available_inventory_qty=0,
+                stock_ship_qty=0,
+                production_qty=60,
+                is_short_close=False,
+                memo=(
+                    "수주수량 정정 100 -> 60; "
+                    "LOT 계획수량 정정 80 -> 60"
+                ),
+                created_at=datetime(2026, 7, 1, 11, 0, 0),
+            )
+        )
+        self.db.commit()
+
+        result = get_lot_trace_detail_for_lot(self.db, 1)
+
+        timeline_item = next(
+            item
+            for item in result.timeline
+            if item.event_type == "LOT_QUANTITY_CHANGED"
+        )
+        self.assertIn("수주수량 100 EA → 60 EA", timeline_item.summary)
+        self.assertIn("LOT 계획수량 80 EA → 60 EA", timeline_item.summary)
+        self.assertEqual(3, timeline_item.ref_id)
+
+    def test_lot_trace_timeline_includes_outsource_update_and_cancel(self) -> None:
+        self._seed_full_trace()
+        work_group = self.db.get(OutsourceWorkGroup, 1)
+        work_group.status = "CANCELED"
+        work_group.canceled_at = datetime(2026, 7, 5, 10, 0, 0)
+        work_group.canceled_reason = "작업지시 오류"
+        self.db.add_all(
+            [
+                OutsourceWorkGroupChangeLog(
+                    outsource_work_group_change_log_id=1,
+                    outsource_work_group_id=1,
+                    action_type="UPDATE",
+                    reason="발주수량 정정",
+                    before_data={
+                        "sheet_qty": 5,
+                        "length_m": None,
+                        "sheet_cut_count": 2,
+                        "fabric_lot_no": None,
+                        "remark": None,
+                        "items": [{"lot_id": 1, "expected_output_qty": 10}],
+                    },
+                    after_data={
+                        "sheet_qty": 6,
+                        "length_m": None,
+                        "sheet_cut_count": 2,
+                        "fabric_lot_no": None,
+                        "remark": None,
+                        "items": [{"lot_id": 1, "expected_output_qty": 12}],
+                    },
+                    created_by="tester",
+                    created_at=datetime(2026, 7, 5, 9, 0, 0),
+                ),
+                OutsourceWorkGroupChangeLog(
+                    outsource_work_group_change_log_id=2,
+                    outsource_work_group_id=1,
+                    action_type="CANCEL",
+                    reason="작업지시 오류",
+                    before_data={"status": None},
+                    after_data={
+                        "status": "CANCELED",
+                        "canceled_reason": "작업지시 오류",
+                    },
+                    created_by="tester",
+                    created_at=datetime(2026, 7, 5, 10, 0, 0),
+                ),
+            ]
+        )
+        self.db.commit()
+
+        result = get_lot_trace_detail_for_lot(self.db, 1)
+
+        updated = next(
+            item
+            for item in result.timeline
+            if item.event_type == "OUTSOURCE_INSTRUCTION_UPDATED"
+        )
+        self.assertEqual("외주 작업지시 수정", updated.title)
+        self.assertIn("작업수량(장) 5 → 6", updated.summary)
+        self.assertIn("예상수량 10 → 12", updated.summary)
+        self.assertIn("처리자: tester", updated.summary)
+        self.assertEqual("발주수량 정정", updated.memo)
+
+        canceled = next(
+            item
+            for item in result.timeline
+            if item.event_type == "OUTSOURCE_INSTRUCTION_CANCELED"
+        )
+        self.assertEqual("외주 작업지시 취소", canceled.title)
+        self.assertEqual("CANCELED", canceled.status)
+        self.assertIn("OWI-1 / CUT / A001", canceled.summary)
+        self.assertIn("처리자: tester", canceled.summary)
+        self.assertEqual("작업지시 오류", canceled.memo)
+        self.assertEqual("OUTSOURCE_WORK_GROUP_CHANGE_LOG", canceled.ref_type)
+        self.assertEqual(2, canceled.ref_id)
 
     def test_lot_trace_detail_rejects_missing_lot(self) -> None:
         with self.assertRaises(HTTPException) as ctx:

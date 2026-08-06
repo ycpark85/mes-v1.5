@@ -91,7 +91,12 @@ class OutsourceWorkGroupServiceTests(unittest.TestCase):
         with patch(
             "app.services.outsource_work_group_service.refresh_order_line_snapshots_for_work_groups"
         ) as refresh:
-            work_group = update_work_group(self.db, 1, payload)
+            work_group = update_work_group(
+                self.db,
+                1,
+                payload,
+                actor="tester",
+            )
 
         self.assertEqual(120, work_group.sheet_qty)
         self.assertEqual(3, work_group.sheet_cut_count)
@@ -105,15 +110,25 @@ class OutsourceWorkGroupServiceTests(unittest.TestCase):
         change_logs = self.db.execute(select(OutsourceWorkGroupChangeLog)).scalars().all()
         self.assertEqual(1, len(change_logs))
         self.assertEqual("UPDATE", change_logs[0].action_type)
+        self.assertEqual("tester", change_logs[0].created_by)
         refresh.assert_called_once_with(self.db, [1])
 
     def test_cancel_work_group_cancels_group_and_deactivates_instruction_item(self) -> None:
+        lot = self.db.get(Lot, 1)
+        lot.status = "RECEIVED"
+        self.db.flush()
+
         payload = OutsourceWorkGroupCancelIn(reason="no longer needed")
 
         with patch(
             "app.services.outsource_work_group_service.refresh_order_line_snapshots_for_work_groups"
         ) as refresh:
-            work_group = cancel_work_group(self.db, 1, payload)
+            work_group = cancel_work_group(
+                self.db,
+                1,
+                payload,
+                actor="tester",
+            )
 
         self.assertEqual("CANCELED", work_group.status)
         self.assertEqual("no longer needed", work_group.canceled_reason)
@@ -124,6 +139,11 @@ class OutsourceWorkGroupServiceTests(unittest.TestCase):
 
         inspection_schedule = self.db.get(InspectionSchedule, 1)
         self.assertEqual("CANCELED", inspection_schedule.status)
+        self.assertEqual("WAITING", lot.status)
+        change_logs = self.db.execute(select(OutsourceWorkGroupChangeLog)).scalars().all()
+        self.assertEqual(1, len(change_logs))
+        self.assertEqual("CANCEL", change_logs[0].action_type)
+        self.assertEqual("tester", change_logs[0].created_by)
         refresh.assert_called_once_with(self.db, [1])
 
     def test_cancel_work_group_rejects_progressed_inspection_schedule(self) -> None:
@@ -134,7 +154,12 @@ class OutsourceWorkGroupServiceTests(unittest.TestCase):
         payload = OutsourceWorkGroupCancelIn(reason="no longer needed")
 
         with self.assertRaises(HTTPException) as ctx:
-            cancel_work_group(self.db, 1, payload)
+            cancel_work_group(
+                self.db,
+                1,
+                payload,
+                actor="tester",
+            )
 
         self.assertEqual(409, ctx.exception.status_code)
 

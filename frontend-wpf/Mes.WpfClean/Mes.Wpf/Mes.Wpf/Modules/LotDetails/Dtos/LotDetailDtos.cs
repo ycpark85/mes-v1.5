@@ -370,6 +370,8 @@ namespace Mes.Wpf.Modules.LotDetails.Dtos
         {
             "INSPECTION_PARTIAL_DONE" => "분할",
             "INSPECTION_FINAL_DONE" => "최종",
+            "OUTSOURCE_INSTRUCTION_UPDATED" => "수정",
+            "OUTSOURCE_INSTRUCTION_CANCELED" => "취소",
             "LOT_DONE" => "완료",
             "LOT_CANCELED" => "취소",
             _ when IsCurrent => "진행",

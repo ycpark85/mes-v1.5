@@ -90,6 +90,14 @@ class LotQueryTests(unittest.TestCase):
         self.assertEqual(1, result.meta.total)
         self.assertEqual(4, result.items[0].lot_id)
 
+    def test_canceled_inspection_schedule_returns_waiting_lot_to_created_display(self) -> None:
+        result = list_lots(self.db, page=1, size=20, q="LOT-CREATED")
+
+        self.assertEqual(1, result.meta.total)
+        self.assertEqual("CANCELED", result.items[0].inspection_status)
+        self.assertEqual("WAITING", result.items[0].status)
+        self.assertEqual("CREATED", result.items[0].list_status)
+
     def test_list_lots_applies_keyword_filter(self) -> None:
         result = list_lots(self.db, page=1, size=20, q="LOT-PARENT")
 
@@ -289,6 +297,13 @@ class LotQueryTests(unittest.TestCase):
                     lot_id=2,
                     inspection_date=date(2026, 7, 13),
                     status="DONE",
+                    day_seq=1,
+                ),
+                InspectionSchedule(
+                    inspection_schedule_id=3,
+                    lot_id=4,
+                    inspection_date=date(2026, 7, 14),
+                    status="CANCELED",
                     day_seq=1,
                 ),
             ]

@@ -3,7 +3,16 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import BigInteger, DateTime, ForeignKey, Index, String, Text, func
+from sqlalchemy import (
+    BigInteger,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    String,
+    Text,
+    func,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -13,6 +22,10 @@ from app.db.base import Base
 class OutsourceWorkGroupChangeLog(Base):
     __tablename__ = "outsource_work_group_change_log"
     __table_args__ = (
+        CheckConstraint(
+            "action_type IN ('UPDATE','CANCEL')",
+            name="ck_outsource_work_group_change_log__action_type",
+        ),
         Index(
             "ix_owg_change_log__work_group_id",
             "outsource_work_group_id",
