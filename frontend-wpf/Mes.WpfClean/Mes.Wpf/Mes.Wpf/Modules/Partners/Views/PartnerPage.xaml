@@ -3,6 +3,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:controls="clr-namespace:Mes.Wpf.Core.Controls"
              mc:Ignorable="d"
              d:DesignHeight="900"
              d:DesignWidth="1400">
@@ -98,6 +99,7 @@
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="8"/>
                         <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
 
                     <TextBlock Text="거래처 목록"
@@ -132,6 +134,11 @@
                                                     Binding="{Binding IsActive}" />
                         </DataGrid.Columns>
                     </DataGrid>
+
+                    <controls:PaginationBar Grid.Row="3"
+                                            PageText="{Binding ListPageDisplayText}"
+                                            PreviousCommand="{Binding ListPreviousPageCommand}"
+                                            NextCommand="{Binding ListNextPageCommand}"/>
                 </Grid>
             </Border>
 

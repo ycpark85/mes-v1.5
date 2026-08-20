@@ -99,14 +99,14 @@ namespace Mes.Wpf.Modules.Inventories.ViewModels
             await SearchAsync();
         }
 
-        protected override async Task LoadListAsync()
+        protected override async Task<bool> LoadListAsync()
         {
             var result = await _apiClient.GetAsync<InventoryListDto>(BuildListUrl());
 
             if (!result.Success || result.Data == null)
             {
                 _messageService.ShowError(result.Message ?? "재고 조회 중 오류가 발생했습니다.");
-                return;
+                return false;
             }
 
             Items.Clear();
@@ -115,6 +115,9 @@ namespace Mes.Wpf.Modules.Inventories.ViewModels
             {
                 Items.Add(item);
             }
+
+            ApplyListPage(result.Data.Total, result.Data.Page, result.Data.Size);
+            return true;
         }
 
         protected override void Reset()
@@ -326,8 +329,8 @@ namespace Mes.Wpf.Modules.Inventories.ViewModels
         {
             var queryParts = new List<string>
             {
-                "page=1",
-                "size=100"
+                $"page={ListPage}",
+                $"size={ListPageSize}"
             };
 
             if (!string.IsNullOrWhiteSpace(SearchKeyword))

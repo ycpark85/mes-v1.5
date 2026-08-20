@@ -3,6 +3,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:controls="clr-namespace:Mes.Wpf.Core.Controls"
              mc:Ignorable="d">
 
     <UserControl.Resources>
@@ -244,6 +245,7 @@
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="10"/>
                     <RowDefinition Height="*"/>
+                    <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
 
                 <TextBlock Grid.Row="0"
@@ -320,8 +322,18 @@
                                 </DataTemplate>
                             </DataGridTemplateColumn.CellTemplate>
                         </DataGridTemplateColumn>
+
+                        <DataGridTextColumn Header="재고수량"
+                        Binding="{Binding CurrentStockQty, StringFormat={}{0:N0}}"
+                        Width="100"
+                        ElementStyle="{StaticResource CenterTextBlockStyle}"/>
                     </DataGrid.Columns>
                 </DataGrid>
+
+                <controls:PaginationBar Grid.Row="3"
+                                        PageText="{Binding ProductPageDisplayText}"
+                                        PreviousCommand="{Binding ProductPreviousPageCommand}"
+                                        NextCommand="{Binding ProductNextPageCommand}"/>
             </Grid>
         </Border>
 

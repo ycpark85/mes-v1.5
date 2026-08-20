@@ -384,10 +384,22 @@ Product history monitoring is a product-to-LOT trace view.
 - PostgreSQL `timestamp with time zone` columns store the instant independently of the database session display timezone.
 - Existing timestamps are not shifted because the current PostgreSQL `Asia/Seoul` session already interpreted older naive values as Korea local time.
 - Business calendar dates such as LOT creation date, inspection date, order date, and due date remain date-only values based on the Korea business day.
+- Inspection start keeps the same-day-only rule, but PostgreSQL's transaction timestamp converted explicitly to `Asia/Seoul` is the authoritative business date. A database/application date disagreement selects the database date and records both dates with the request ID; a rejected start also records the schedule ID, LOT ID, inspection date, and selected business date.
 - Date-range filters over event timestamps convert Korea midnight boundaries to UTC and use a half-open range (`start <= value < next day`).
 - MES and vendor WPF API clients convert timestamp values carrying `Z` or an explicit offset to Korea time when deserializing. Date-only JSON values are left unchanged.
 
 ## Refactoring Closure
+
+### Product, list paging, and drawing-file consistency
+
+- Product list read models are assembled by `product_query.py`. The paged list uses one count query and one projection query for product, drawing number, routing-template name, and current product inventory; partner filtering uses an `EXISTS` condition so multiple order lines do not duplicate products.
+- The product-history product grid displays `current_stock_qty` immediately to the right of the drawing number.
+- The main product, drawing, partner, process, defect type, routing template, routing-step template, user, role, inventory, pending-new-drawing, production-daily, and product-history lists expose previous/next paging controls and use the API response `total`, `page`, and `size` values. Failed page loads restore the previously displayed page. Lookup lists and selected-record detail collections keep their existing bounded fetch behavior.
+- New drawing revisions with selected DRAWING, ORIGINAL, and PLATE files use `POST /api/v1/drawings/{drawing_id}/revisions/bundle`. The backend writes all selected files before one DB commit, rolls the DB transaction back on failure, and removes newly stored files that do not have a committed revision row.
+- Existing single-file upload and replacement endpoints also remove the newly written file when their DB operation fails. Replacement removes the old file only after the new database reference commits.
+- Drawing WPF screens share one multipart-content builder so field names and file disposal behavior remain consistent.
+- Inspection sellable-quantity normalization and validation is isolated in `inspection_quantity_policy.py`; the inspection-result service converts policy failures to HTTP 422 and retains the legacy prior-round stock allocation behavior.
+- Outsource partner names for CUT, PRINT, and DIECUT are defined once in `routing_policy.py`. Changing partner identity from a name-based rule to a stable database code remains a schema/data migration and requires a separate migration plan.
 
 The current operational refactoring scope is closed for the active MES flows covered below.
 

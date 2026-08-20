@@ -27,6 +27,7 @@ from app.schemas.outsource_work_instruction import (
 from app.services.production_daily_query import refresh_order_line_snapshots_for_work_groups
 from app.services.routing_policy import (
     get_available_process_types as _get_available_process_types,
+    get_outsource_partner_name_by_process_type as _get_outsource_partner_name_by_process_type,
 )
 
 
@@ -569,18 +570,3 @@ def _is_bohyun_target_work_group(
         return True
 
     return False
-
-
-def _get_outsource_partner_name_by_process_type(process_type: str) -> str | None:
-    normalized = (process_type or "").strip().upper()
-
-    if normalized == "CUT":
-        return "코리아라벨 주식회사"
-
-    if normalized == "PRINT":
-        return "주식회사 상림크리에이티브"
-
-    if normalized == "DIECUT":
-        return "보현문화"
-
-    return None

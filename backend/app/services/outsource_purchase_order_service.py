@@ -23,6 +23,7 @@ from app.schemas.outsource_work_instruction import (
 )
 from app.services.production_daily_query import refresh_order_line_snapshots_for_lots
 from app.services.routing_policy import (
+    get_outsource_partner_name_by_process_type as _get_outsource_partner_name_by_process_type,
     is_purchase_order_target_process,
 )
 
@@ -368,23 +369,8 @@ def require_outsource_partner_by_process_type(
     raise HTTPException(
         status_code=409,
         detail=(
-            f"?몄＜泥??뺣낫媛 ?놁뒿?덈떎. partner ?뚯씠釉붿뿉 "
-            f"[{partner_name}] VENDOR 嫄곕옒泥섎? ?깅줉?댁＜?몄슂."
+            f"외주처를 찾을 수 없습니다. 거래처 기준정보에 "
+            f"[{partner_name}] VENDOR 거래처를 활성 상태로 등록하세요."
         ),
     )
-
-
-def _get_outsource_partner_name_by_process_type(process_type: str) -> str | None:
-    normalized = (process_type or "").strip().upper()
-
-    if normalized == "CUT":
-        return "\ucf54\ub9ac\uc544\ub77c\ubca8 \uc8fc\uc2dd\ud68c\uc0ac"
-
-    if normalized == "PRINT":
-        return "\uc8fc\uc2dd\ud68c\uc0ac \uc0c1\ub9bc\ud06c\ub9ac\uc5d0\uc774\ud2f0\ube0c"
-
-    if normalized == "DIECUT":
-        return "\ubcf4\ud604\ubb38\ud654"
-
-    return None
 

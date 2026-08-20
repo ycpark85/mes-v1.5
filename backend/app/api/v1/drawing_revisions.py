@@ -193,6 +193,16 @@ def _abs_path_from_uri(file_uri: str) -> Path:
 
     return abs_path
 
+
+def _remove_stored_files(file_uris: list[str]) -> None:
+    """Best-effort cleanup for files that have no committed database row."""
+    for file_uri in file_uris:
+        try:
+            _abs_path_from_uri(file_uri).unlink(missing_ok=True)
+        except Exception:
+            # Cleanup must not hide the original database or upload error.
+            pass
+
 # =========================================================
 # 1) revision 생성 (파일 없이)
 # =========================================================
@@ -286,17 +296,115 @@ def upload_revision(
         db.commit()
     except IntegrityError:
         db.rollback()
-        try:
-            _abs_path_from_uri(file_uri).unlink(missing_ok=True)
-        except Exception:
-            pass
+        _remove_stored_files([file_uri])
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="rev_no already exists in this drawing",
         )
+    except Exception:
+        db.rollback()
+        _remove_stored_files([file_uri])
+        raise
 
     rev = _ensure_revision(db, drawing_id, rev.revision_id)
     return rev
+
+
+@router.post(
+    "/{drawing_id}/revisions/bundle",
+    response_model=DrawingRevisionOut,
+    status_code=status.HTTP_201_CREATED,
+)
+def upload_revision_bundle(
+    drawing_id: int = FPath(..., ge=1),
+    rev_no: str = Form(..., max_length=20),
+    set_as_current: bool = Form(True),
+    drawing_file: UploadFile | None = File(None),
+    original_file: UploadFile | None = File(None),
+    plate_file: UploadFile | None = File(None),
+    db: Session = Depends(get_db),
+):
+    """Create a revision and all selected files as one recoverable operation."""
+    drawing = _ensure_drawing(db, drawing_id)
+    normalized_rev_no = rev_no.strip()
+    if not normalized_rev_no:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="rev_no is required",
+        )
+
+    uploads = (
+        ("DRAWING", drawing_file),
+        ("ORIGINAL", original_file),
+        ("PLATE", plate_file),
+    )
+    saved_files: list[tuple[str, str, int | None, str | None, str]] = []
+
+    try:
+        for file_kind, upload in uploads:
+            if upload is None:
+                continue
+
+            store_dir = _make_store_dir(
+                drawing_no=drawing.drawing_no,
+                rev_no=normalized_rev_no,
+                file_kind=file_kind,
+            )
+            file_uri, file_size, content_type = _save_upload_file(
+                file=upload,
+                target_dir=store_dir,
+            )
+            saved_files.append(
+                (
+                    file_kind,
+                    file_uri,
+                    file_size,
+                    content_type,
+                    upload.filename or Path(file_uri).name,
+                )
+            )
+
+        drawing_uri = next(
+            (file_uri for kind, file_uri, *_ in saved_files if kind == "DRAWING"),
+            "",
+        )
+        revision = DrawingRevision(
+            drawing_id=drawing_id,
+            rev_no=normalized_rev_no,
+            file_uri=drawing_uri,
+        )
+        db.add(revision)
+        db.flush()
+
+        for file_kind, file_uri, file_size, content_type, original_filename in saved_files:
+            db.add(
+                DrawingRevisionFile(
+                    revision_id=revision.revision_id,
+                    file_kind=file_kind,
+                    file_uri=file_uri,
+                    original_filename=original_filename,
+                    content_type=content_type,
+                    file_size=file_size,
+                )
+            )
+
+        if set_as_current:
+            drawing.current_revision_id = revision.revision_id
+
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        _remove_stored_files([file_uri for _, file_uri, *_ in saved_files])
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="rev_no already exists in this drawing",
+        )
+    except Exception:
+        db.rollback()
+        _remove_stored_files([file_uri for _, file_uri, *_ in saved_files])
+        raise
+
+    return _ensure_revision(db, drawing_id, revision.revision_id)
 
 
 # =========================================================
@@ -422,14 +530,15 @@ def upload_revision_file(
         db.commit()
     except IntegrityError:
         db.rollback()
-        try:
-            _abs_path_from_uri(file_uri).unlink(missing_ok=True)
-        except Exception:
-            pass
+        _remove_stored_files([file_uri])
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"{normalized_kind} file already exists",
         )
+    except Exception:
+        db.rollback()
+        _remove_stored_files([file_uri])
+        raise
 
     db.refresh(obj)
     return obj
@@ -481,7 +590,13 @@ def replace_revision_file_by_kind(
     if normalized_kind == "DRAWING":
         rev.file_uri = new_uri
 
-    db.commit()
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        _remove_stored_files([new_uri])
+        raise
+
     db.refresh(obj)
 
     try:
@@ -547,7 +662,12 @@ def replace_revision_file_legacy(
     if set_as_current:
         drawing.current_revision_id = rev.revision_id
 
-    db.commit()
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        _remove_stored_files([new_uri])
+        raise
 
     try:
         if old_uri:

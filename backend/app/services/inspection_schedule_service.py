@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import logging
 from datetime import date, datetime
 
 from fastapi import HTTPException
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
+from app.core.observability import request_id_context
 from app.core.time import korea_today, utc_now
 from app.models.inspection_schedule import InspectionSchedule
 from app.models.lot import Lot
@@ -23,6 +25,12 @@ from app.schemas.inspection_schedule import (
 from app.services.lot_status import derive_lot_status_from_inspection_statuses
 from app.services.production_daily_query import refresh_order_line_snapshots_for_lots
 from app.services.routing_policy import is_inspection_only_template_name
+
+
+inspection_logger = logging.getLogger("mes.inspection")
+_KOREA_BUSINESS_DATE_SQL = text(
+    "SELECT (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Seoul')::date"
+)
 
 
 def create_inspection_schedule(
@@ -310,11 +318,24 @@ def start_inspection_schedule(
     if schedule.status != "RECEIVED":
         raise HTTPException(status_code=409, detail="Only RECEIVED schedule can be started")
 
-    today_kst = today or korea_today()
-    if schedule.inspection_date != today_kst:
+    business_date = _resolve_inspection_start_business_date(db, today=today)
+    if schedule.inspection_date != business_date:
+        inspection_logger.warning(
+            "inspection_start_date_rejected request_id=%s schedule_id=%s "
+            "lot_id=%s inspection_date=%s business_date=%s",
+            request_id_context.get(),
+            schedule.inspection_schedule_id,
+            schedule.lot_id,
+            schedule.inspection_date,
+            business_date,
+        )
         raise HTTPException(
             status_code=409,
-            detail="Inspection can be started only for today's schedule",
+            detail=(
+                "오늘 스케줄만 검수를 시작할 수 있습니다. "
+                f"선택 검수일: {schedule.inspection_date.isoformat()}, "
+                f"서버 기준일: {business_date.isoformat()}"
+            ),
         )
 
     schedule.status = "IN_PROGRESS"
@@ -325,6 +346,31 @@ def start_inspection_schedule(
     refresh_order_line_snapshots_for_lots(db, {schedule.lot_id})
 
     return schedule
+
+
+def _resolve_inspection_start_business_date(
+    db: Session,
+    *,
+    today: date | None,
+) -> date:
+    if today is not None:
+        return today
+
+    application_date = korea_today()
+    if db.get_bind().dialect.name != "postgresql":
+        return application_date
+
+    business_date = db.execute(_KOREA_BUSINESS_DATE_SQL).scalar_one()
+    if business_date != application_date:
+        inspection_logger.error(
+            "inspection_business_date_source_mismatch request_id=%s "
+            "database_date=%s application_date=%s selected_source=database",
+            request_id_context.get(),
+            business_date,
+            application_date,
+        )
+
+    return business_date
 
 
 def cancel_inspection_schedule(

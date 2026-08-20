@@ -3,14 +3,13 @@ using Mes.Wpf.Core.Constants;
 using Mes.Wpf.Core.Interfaces;
 using Mes.Wpf.Core.Models;
 using Mes.Wpf.Modules.Drawings.Dtos;
+using Mes.Wpf.Modules.Drawings.Services;
 using Microsoft.Win32;
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
-using System.Net.Http;
-using System.Net.Http.Headers;
 using System.Threading.Tasks;
 
 namespace Mes.Wpf.Modules.Drawings.ViewModels
@@ -33,6 +32,9 @@ namespace Mes.Wpf.Modules.Drawings.ViewModels
         private bool _isLoading;
         private string _loadingMessage = "처리 중입니다...";
         private string _summaryText = "대기 중";
+        private int _currentPage = 1;
+        private int _pageSize = 100;
+        private int _totalCount;
 
         public PendingNewDrawingPageViewModel(
             IApiClient apiClient,
@@ -47,8 +49,14 @@ namespace Mes.Wpf.Modules.Drawings.ViewModels
             RevisionItems = new ObservableCollection<DrawingRevisionDto>();
             RevisionEditModel = new DrawingRevisionEditModel();
 
-            SearchCommand = new AsyncRelayCommand(SearchAsync);
+            SearchCommand = new AsyncRelayCommand(SearchFirstPageAsync);
             ResetCommand = new RelayCommand(Reset);
+            PreviousPageCommand = new AsyncRelayCommand(
+                GoPreviousPageAsync,
+                () => !IsLoading && HasPreviousPage);
+            NextPageCommand = new AsyncRelayCommand(
+                GoNextPageAsync,
+                () => !IsLoading && HasNextPage);
             NewRevisionCommand = new RelayCommand(NewRevision);
             SaveRevisionBundleCommand = new AsyncRelayCommand(SaveRevisionBundleAsync);
             SaveChangedFilesCommand = new AsyncRelayCommand(SaveChangedFilesAsync);
@@ -68,6 +76,8 @@ namespace Mes.Wpf.Modules.Drawings.ViewModels
 
         public AsyncRelayCommand SearchCommand { get; }
         public RelayCommand ResetCommand { get; }
+        public AsyncRelayCommand PreviousPageCommand { get; }
+        public AsyncRelayCommand NextPageCommand { get; }
         public RelayCommand NewRevisionCommand { get; }
         public AsyncRelayCommand SaveRevisionBundleCommand { get; }
         public AsyncRelayCommand SaveChangedFilesCommand { get; }
@@ -78,6 +88,11 @@ namespace Mes.Wpf.Modules.Drawings.ViewModels
         public RelayCommand OpenDrawingFileCommand { get; }
         public RelayCommand OpenOriginalFileCommand { get; }
         public RelayCommand OpenPlateFileCommand { get; }
+
+        public int TotalPages => Math.Max(1, (int)Math.Ceiling((double)_totalCount / _pageSize));
+        public bool HasPreviousPage => _currentPage > 1;
+        public bool HasNextPage => _currentPage < TotalPages;
+        public string PageDisplayText => $"{_currentPage:N0} / {TotalPages:N0} 페이지 (총 {_totalCount:N0}건)";
 
         public string SearchKeyword
         {
@@ -170,7 +185,13 @@ namespace Mes.Wpf.Modules.Drawings.ViewModels
         public bool IsLoading
         {
             get => _isLoading;
-            set => SetProperty(ref _isLoading, value);
+            set
+            {
+                if (SetProperty(ref _isLoading, value))
+                {
+                    RaisePageState();
+                }
+            }
         }
 
         public string LoadingMessage
@@ -227,10 +248,17 @@ namespace Mes.Wpf.Modules.Drawings.ViewModels
 
         public async Task InitializeAsync()
         {
+            await SearchFirstPageAsync();
+        }
+
+        private async Task SearchFirstPageAsync()
+        {
+            _currentPage = 1;
+            RaisePageState();
             await SearchAsync();
         }
 
-        private async Task SearchAsync()
+        private async Task<bool> SearchAsync()
         {
             IsLoading = true;
             LoadingMessage = "신규작성도면 조회 중...";
@@ -243,7 +271,7 @@ namespace Mes.Wpf.Modules.Drawings.ViewModels
                 if (!result.Success || result.Data == null)
                 {
                     _messageService.ShowError(result.Message ?? "신규작성도면 조회 중 오류가 발생했습니다.");
-                    return;
+                    return false;
                 }
 
                 Items.Clear();
@@ -253,6 +281,10 @@ namespace Mes.Wpf.Modules.Drawings.ViewModels
                 }
 
                 SummaryText = $"대상: {result.Data.Total}건";
+                _totalCount = Math.Max(0, result.Data.Total);
+                _currentPage = Math.Max(1, result.Data.Page);
+                _pageSize = result.Data.Size > 0 ? result.Data.Size : _pageSize;
+                RaisePageState();
 
                 SelectedItem = selectedDrawingId.HasValue
                     ? Items.FirstOrDefault(x => x.DrawingId == selectedDrawingId.Value)
@@ -262,6 +294,8 @@ namespace Mes.Wpf.Modules.Drawings.ViewModels
                 {
                     ClearSelectionDetail();
                 }
+
+                return true;
             }
             finally
             {
@@ -273,12 +307,56 @@ namespace Mes.Wpf.Modules.Drawings.ViewModels
         private void Reset()
         {
             SearchKeyword = string.Empty;
-            _ = SearchAsync();
+            _ = SearchFirstPageAsync();
+        }
+
+        private async Task GoPreviousPageAsync()
+        {
+            if (HasPreviousPage)
+            {
+                var previousPage = _currentPage;
+                _currentPage--;
+                RaisePageState();
+                if (!await SearchAsync())
+                {
+                    _currentPage = previousPage;
+                    RaisePageState();
+                }
+            }
+        }
+
+        private async Task GoNextPageAsync()
+        {
+            if (HasNextPage)
+            {
+                var previousPage = _currentPage;
+                _currentPage++;
+                RaisePageState();
+                if (!await SearchAsync())
+                {
+                    _currentPage = previousPage;
+                    RaisePageState();
+                }
+            }
+        }
+
+        private void RaisePageState()
+        {
+            OnPropertyChanged(nameof(TotalPages));
+            OnPropertyChanged(nameof(HasPreviousPage));
+            OnPropertyChanged(nameof(HasNextPage));
+            OnPropertyChanged(nameof(PageDisplayText));
+            PreviousPageCommand.RaiseCanExecuteChanged();
+            NextPageCommand.RaiseCanExecuteChanged();
         }
 
         private string BuildListUrl()
         {
-            var queryParts = new List<string> { "page=1", "size=100" };
+            var queryParts = new List<string>
+            {
+                $"page={_currentPage}",
+                $"size={_pageSize}"
+            };
 
             if (!string.IsNullOrWhiteSpace(SearchKeyword))
             {
@@ -377,6 +455,16 @@ namespace Mes.Wpf.Modules.Drawings.ViewModels
                 return;
             }
 
+            var missingFilePath = DrawingMultipartContentFactory.FindMissingFile(
+                DrawingUploadPath,
+                OriginalUploadPath,
+                PlateUploadPath);
+            if (missingFilePath != null)
+            {
+                _messageService.ShowWarning($"선택한 파일을 찾을 수 없습니다.\n{missingFilePath}");
+                return;
+            }
+
             IsLoading = true;
             LoadingMessage = "리비전 및 도면파일 저장 중...";
             await Task.Yield();
@@ -385,38 +473,20 @@ namespace Mes.Wpf.Modules.Drawings.ViewModels
 
             try
             {
-                var request = new DrawingRevisionCreateRequest
-                {
-                    RevNo = RevisionEditModel.RevNo,
-                    SetAsCurrent = true
-                };
+                using var content = DrawingMultipartContentFactory.CreateRevisionBundle(
+                    RevisionEditModel.RevNo,
+                    true,
+                    DrawingUploadPath,
+                    OriginalUploadPath,
+                    PlateUploadPath);
 
-                var result = await _apiClient.PostAsync<DrawingRevisionCreateRequest, DrawingRevisionDto>(
-                    $"{ApiRoutes.Drawings}/{SelectedItem.DrawingId}/revisions",
-                    request);
+                var result = await _apiClient.PostMultipartAsync<DrawingRevisionDto>(
+                    $"{ApiRoutes.Drawings}/{SelectedItem.DrawingId}/revisions/bundle",
+                    content);
 
                 if (!result.Success || result.Data == null)
                 {
                     _messageService.ShowError(result.Message ?? "리비전 저장 중 오류가 발생했습니다.");
-                    return;
-                }
-
-                var createdRevision = result.Data;
-
-                if (!await UploadRevisionFileInternalAsync(createdRevision.RevisionId, "DRAWING", DrawingUploadPath))
-                {
-                    return;
-                }
-
-                if (!string.IsNullOrWhiteSpace(OriginalUploadPath) &&
-                    !await UploadRevisionFileInternalAsync(createdRevision.RevisionId, "ORIGINAL", OriginalUploadPath))
-                {
-                    return;
-                }
-
-                if (!string.IsNullOrWhiteSpace(PlateUploadPath) &&
-                    !await UploadRevisionFileInternalAsync(createdRevision.RevisionId, "PLATE", PlateUploadPath))
-                {
                     return;
                 }
 
@@ -517,7 +587,7 @@ namespace Mes.Wpf.Modules.Drawings.ViewModels
                 return false;
             }
 
-            using var content = BuildMultipartFileContent(fileKind, filePath, true);
+            using var content = DrawingMultipartContentFactory.CreateSingleFile(fileKind, filePath, true);
 
             var result = await _apiClient.PostMultipartAsync<DrawingRevisionFileDto>(
                 $"{ApiRoutes.Drawings}/{SelectedItem.DrawingId}/revisions/{revisionId}/files",
@@ -546,7 +616,7 @@ namespace Mes.Wpf.Modules.Drawings.ViewModels
                 return false;
             }
 
-            using var content = BuildMultipartFileContent(fileKind, filePath, false);
+            using var content = DrawingMultipartContentFactory.CreateSingleFile(fileKind, filePath, false);
 
             var result = await _apiClient.PatchMultipartAsync<DrawingRevisionFileDto>(
                 $"{ApiRoutes.Drawings}/{SelectedItem.DrawingId}/revisions/{RevisionEditModel.RevisionId.Value}/files/{fileKind}",
@@ -641,23 +711,6 @@ namespace Mes.Wpf.Modules.Drawings.ViewModels
             ClearUploadPaths();
             ClearDirtyFlags();
             RaiseAllStates();
-        }
-
-        private static MultipartFormDataContent BuildMultipartFileContent(string fileKind, string filePath, bool includeKind)
-        {
-            var content = new MultipartFormDataContent();
-
-            if (includeKind)
-            {
-                content.Add(new StringContent(fileKind), "file_kind");
-            }
-
-            var stream = File.OpenRead(filePath);
-            var fileContent = new StreamContent(stream);
-            fileContent.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
-
-            content.Add(fileContent, "file", Path.GetFileName(filePath));
-            return content;
         }
 
         private static string PickFile()

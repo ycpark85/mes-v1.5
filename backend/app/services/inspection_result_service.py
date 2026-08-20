@@ -30,6 +30,10 @@ from app.services.production_daily_query import (
     refresh_order_line_snapshots_for_lots,
     refresh_order_line_snapshots_for_product,
 )
+from app.services.inspection_quantity_policy import (
+    InspectionQuantityError,
+    build_inspection_quantity_plan,
+)
 
 
 def _utcnow() -> datetime:
@@ -159,40 +163,39 @@ def upsert_inspection_result(
                 status_code=422,
                 detail="partial_reason is required when is_partial=true",
             )
-        stock_ship_qty = 0
-        result_ship_qty = 0
-        stock_in_qty = 0
-        discard_qty = 0
-        uninspected_qty = 0
     else:
         next_inspection_date = None
         partial_reason = None
-
-    inspected_qty = good_qty + defect_ship_qty + defect_qty
-    sellable_qty = good_qty + defect_ship_qty
 
     prior_good_qty, prior_defect_ship_qty, _, _, _, _ = _get_prior_result_totals(
         db,
         lot_id=sch.lot_id,
         current_schedule_id=inspection_schedule_id,
     )
-    prior_sellable_qty = prior_good_qty + prior_defect_ship_qty
+    try:
+        quantity_plan = build_inspection_quantity_plan(
+            is_partial=is_partial,
+            good_qty=good_qty,
+            defect_ship_qty=defect_ship_qty,
+            defect_qty=defect_qty,
+            stock_ship_qty=stock_ship_qty,
+            result_ship_qty=result_ship_qty,
+            stock_in_qty=stock_in_qty,
+            discard_qty=discard_qty,
+            uninspected_qty=uninspected_qty,
+            prior_good_qty=prior_good_qty,
+            prior_defect_ship_qty=prior_defect_ship_qty,
+        )
+    except InspectionQuantityError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-    if not is_partial:
-        requested_sellable_qty = result_ship_qty + stock_in_qty + discard_qty
-        required_sellable_qty = sellable_qty + prior_sellable_qty
-
-        if prior_sellable_qty > 0 and requested_sellable_qty == sellable_qty:
-            stock_in_qty += prior_sellable_qty
-            requested_sellable_qty = result_ship_qty + stock_in_qty + discard_qty
-
-        if requested_sellable_qty != required_sellable_qty:
-            raise HTTPException(
-                status_code=422,
-                detail=(
-                    "result_ship_qty + stock_in_qty + discard_qty must equal sellable inspection qty"
-                ),
-            )
+    inspected_qty = quantity_plan.inspected_qty
+    sellable_qty = quantity_plan.sellable_qty
+    stock_ship_qty = quantity_plan.stock_ship_qty
+    result_ship_qty = quantity_plan.result_ship_qty
+    stock_in_qty = quantity_plan.stock_in_qty
+    discard_qty = quantity_plan.discard_qty
+    uninspected_qty = quantity_plan.uninspected_qty
 
     if defects:
         defect_type_ids = sorted({d.defect_type_id for d in defects})

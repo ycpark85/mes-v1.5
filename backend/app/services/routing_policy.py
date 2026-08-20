@@ -2,6 +2,11 @@ from __future__ import annotations
 
 
 INSPECTION_ONLY_TEMPLATE_NAME = "\uAC80\uC218\uB9CC\uC9C4\uD589"
+OUTSOURCE_PARTNER_NAME_BY_PROCESS_TYPE = {
+    "CUT": "\ucf54\ub9ac\uc544\ub77c\ubca8 \uc8fc\uc2dd\ud68c\uc0ac",
+    "PRINT": "\uc8fc\uc2dd\ud68c\uc0ac \uc0c1\ub9bc\ud06c\ub9ac\uc5d0\uc774\ud2f0\ube0c",
+    "DIECUT": "\ubcf4\ud604\ubb38\ud654",
+}
 
 
 def normalize_routing_template_name(template_name: str | None) -> str:
@@ -32,6 +37,11 @@ def is_purchase_order_target_process(
     template_name: str | None,
 ) -> bool:
     return process_type in get_available_process_types(template_name)
+
+
+def get_outsource_partner_name_by_process_type(process_type: str) -> str | None:
+    normalized = (process_type or "").strip().upper()
+    return OUTSOURCE_PARTNER_NAME_BY_PROCESS_TYPE.get(normalized)
 
 
 def get_purchase_order_inbound_partner_name(

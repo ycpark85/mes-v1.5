@@ -1,6 +1,7 @@
 ﻿<UserControl x:Class="Mes.Wpf.Modules.Roles.Views.RolePage"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="clr-namespace:Mes.Wpf.Core.Controls">
     <Grid Background="#F8FAFC">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
@@ -81,7 +82,14 @@
                     BorderBrush="#E2E8F0"
                     BorderThickness="1"
                     CornerRadius="12">
-                <DataGrid ItemsSource="{Binding Items}"
+                <Grid Margin="12">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+
+                <DataGrid Grid.Row="0"
+                          ItemsSource="{Binding Items}"
                           SelectedItem="{Binding SelectedItem, Mode=TwoWay}"
                           AutoGenerateColumns="False"
                           CanUserAddRows="False"
@@ -89,8 +97,7 @@
                           HeadersVisibility="Column"
                           GridLinesVisibility="Horizontal"
                           RowHeaderWidth="0"
-                          SelectionMode="Single"
-                          Margin="12">
+                          SelectionMode="Single">
                     <DataGrid.Columns>
                         <DataGridTextColumn Header="역할코드"
                                             Binding="{Binding RoleCode}"
@@ -109,6 +116,12 @@
                                             Width="*" />
                     </DataGrid.Columns>
                 </DataGrid>
+
+                <controls:PaginationBar Grid.Row="1"
+                                        PageText="{Binding ListPageDisplayText}"
+                                        PreviousCommand="{Binding ListPreviousPageCommand}"
+                                        NextCommand="{Binding ListNextPageCommand}"/>
+                </Grid>
             </Border>
 
             <Grid Grid.Column="2">

@@ -4,6 +4,7 @@ using Mes.Wpf.Core.Constants;
 using Mes.Wpf.Core.Interfaces;
 using Mes.Wpf.Core.Models;
 using Mes.Wpf.Modules.Drawings.Dtos;
+using Mes.Wpf.Modules.Drawings.Services;
 using Microsoft.Win32;
 using System;
 using System.Collections.Generic;
@@ -11,8 +12,6 @@ using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
-using System.Net.Http;
-using System.Net.Http.Headers;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 
@@ -276,7 +275,7 @@ namespace Mes.Wpf.Modules.Drawings.ViewModels
             await SearchAsync();
         }
 
-        protected override async Task LoadListAsync()
+        protected override async Task<bool> LoadListAsync()
         {
             var route = BuildListUrl();
             var result = await _apiClient.GetAsync<PagedResult<DrawingDto>>(route);
@@ -284,7 +283,7 @@ namespace Mes.Wpf.Modules.Drawings.ViewModels
             if (!result.Success)
             {
                 _messageService.ShowError(result.Message ?? "도면 조회 중 오류가 발생했습니다.");
-                return;
+                return false;
             }
 
             Items.Clear();
@@ -292,6 +291,12 @@ namespace Mes.Wpf.Modules.Drawings.ViewModels
             {
                 Items.Add(item);
             }
+
+            ApplyListPage(
+                result.Data?.Total ?? 0,
+                result.Data?.Page ?? ListPage,
+                result.Data?.Size ?? ListPageSize);
+            return true;
         }
 
         protected override void Reset()
@@ -607,6 +612,16 @@ namespace Mes.Wpf.Modules.Drawings.ViewModels
                 return;
             }
 
+            var missingFilePath = DrawingMultipartContentFactory.FindMissingFile(
+                DrawingUploadPath,
+                OriginalUploadPath,
+                PlateUploadPath);
+            if (missingFilePath != null)
+            {
+                _messageService.ShowWarning($"선택한 파일을 찾을 수 없습니다.\n{missingFilePath}");
+                return;
+            }
+
             var drawingId = EditModel.DrawingId.Value;
 
             IsLoading = true;
@@ -617,15 +632,16 @@ namespace Mes.Wpf.Modules.Drawings.ViewModels
 
             try
             {
-                var request = new DrawingRevisionCreateRequest
-                {
-                    RevNo = RevisionEditModel.RevNo,
-                    SetAsCurrent = RevisionEditModel.SetAsCurrent
-                };
+                using var content = DrawingMultipartContentFactory.CreateRevisionBundle(
+                    RevisionEditModel.RevNo,
+                    RevisionEditModel.SetAsCurrent,
+                    DrawingUploadPath,
+                    OriginalUploadPath,
+                    PlateUploadPath);
 
-                var result = await _apiClient.PostAsync<DrawingRevisionCreateRequest, DrawingRevisionDto>(
-                    $"{ApiRoutes.Drawings}/{drawingId}/revisions",
-                    request);
+                var result = await _apiClient.PostMultipartAsync<DrawingRevisionDto>(
+                    $"{ApiRoutes.Drawings}/{drawingId}/revisions/bundle",
+                    content);
 
                 if (!result.Success || result.Data == null)
                 {
@@ -634,24 +650,6 @@ namespace Mes.Wpf.Modules.Drawings.ViewModels
                 }
 
                 var createdRevision = result.Data;
-
-                if (!string.IsNullOrWhiteSpace(DrawingUploadPath))
-                {
-                    var ok = await UploadRevisionFileInternalAsync(createdRevision.RevisionId, "DRAWING", DrawingUploadPath);
-                    if (!ok) return;
-                }
-
-                if (!string.IsNullOrWhiteSpace(OriginalUploadPath))
-                {
-                    var ok = await UploadRevisionFileInternalAsync(createdRevision.RevisionId, "ORIGINAL", OriginalUploadPath);
-                    if (!ok) return;
-                }
-
-                if (!string.IsNullOrWhiteSpace(PlateUploadPath))
-                {
-                    var ok = await UploadRevisionFileInternalAsync(createdRevision.RevisionId, "PLATE", PlateUploadPath);
-                    if (!ok) return;
-                }
 
                 await LoadRevisionListAsync(drawingId);
 
@@ -920,7 +918,13 @@ namespace Mes.Wpf.Modules.Drawings.ViewModels
                 return false;
             }
 
-            using var content = BuildMultipartFileContent(fileKind, filePath, true);
+            if (!EditModel.DrawingId.HasValue)
+            {
+                _messageService.ShowWarning("도면 정보가 없습니다.");
+                return false;
+            }
+
+            using var content = DrawingMultipartContentFactory.CreateSingleFile(fileKind, filePath, true);
 
             var result = await _apiClient.PostMultipartAsync<DrawingRevisionFileDto>(
                 $"{ApiRoutes.Drawings}/{EditModel.DrawingId.Value}/revisions/{revisionId}/files",
@@ -949,7 +953,7 @@ namespace Mes.Wpf.Modules.Drawings.ViewModels
                 return false;
             }
 
-            using var content = BuildMultipartFileContent(fileKind, filePath, false);
+            using var content = DrawingMultipartContentFactory.CreateSingleFile(fileKind, filePath, false);
 
             var result = await _apiClient.PatchMultipartAsync<DrawingRevisionFileDto>(
                 $"{ApiRoutes.Drawings}/{EditModel.DrawingId.Value}/revisions/{RevisionEditModel.RevisionId.Value}/files/{fileKind}",
@@ -1041,21 +1045,6 @@ namespace Mes.Wpf.Modules.Drawings.ViewModels
             SelectedRevision = RevisionItems.FirstOrDefault(x => x.RevisionId == selectedRevisionId);
 
             RaiseFileStates();
-        }
-
-        private static MultipartFormDataContent BuildMultipartFileContent(string fileKind, string filePath, bool includeKind)
-        {
-            var content = new MultipartFormDataContent();
-
-            if (includeKind)
-                content.Add(new StringContent(fileKind), "file_kind");
-
-            var stream = File.OpenRead(filePath);
-            var fileContent = new StreamContent(stream);
-            fileContent.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
-
-            content.Add(fileContent, "file", Path.GetFileName(filePath));
-            return content;
         }
 
         private void LoadToEditModel(DrawingDto? item)
@@ -1241,7 +1230,11 @@ namespace Mes.Wpf.Modules.Drawings.ViewModels
 
         private string BuildListUrl()
         {
-            var queryParts = new List<string> { "page=1", "size=100" };
+            var queryParts = new List<string>
+            {
+                $"page={ListPage}",
+                $"size={ListPageSize}"
+            };
 
             if (!string.IsNullOrWhiteSpace(SearchKeyword))
                 queryParts.Add($"q={Uri.EscapeDataString(SearchKeyword.Trim())}");

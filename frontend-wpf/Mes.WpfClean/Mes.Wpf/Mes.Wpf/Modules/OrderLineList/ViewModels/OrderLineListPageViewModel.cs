@@ -404,7 +404,7 @@ namespace Mes.Wpf.Modules.OrderLineList.ViewModels
             await SearchAsync();
         }
 
-        protected override async Task LoadListAsync()
+        protected override async Task<bool> LoadListAsync()
         {
             var route = BuildListUrl();
 
@@ -424,7 +424,7 @@ namespace Mes.Wpf.Modules.OrderLineList.ViewModels
                 OnPropertyChanged(nameof(PagingDebugText));
 
                 _messageService.ShowError(result.Message ?? "수주 리스트 조회 중 오류가 발생했습니다.");
-                return;
+                return false;
             }
 
             Items.Clear();
@@ -448,6 +448,7 @@ namespace Mes.Wpf.Modules.OrderLineList.ViewModels
             OnPropertyChanged(nameof(PageInfoText));
             OnPropertyChanged(nameof(TotalCountText));
             OnPropertyChanged(nameof(PagingDebugText));
+            return true;
         }
 
         protected override void Reset()

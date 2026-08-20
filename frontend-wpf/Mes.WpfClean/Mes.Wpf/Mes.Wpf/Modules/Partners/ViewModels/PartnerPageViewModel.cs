@@ -102,7 +102,7 @@ namespace Mes.Wpf.Modules.Partners.ViewModels
             await SearchAsync();
         }
 
-        protected override async Task LoadListAsync()
+        protected override async Task<bool> LoadListAsync()
         {
             var route = BuildListUrl();
             var result = await _apiClient.GetAsync<PartnerListDto>(route);
@@ -110,7 +110,7 @@ namespace Mes.Wpf.Modules.Partners.ViewModels
             if (!result.Success)
             {
                 _messageService.ShowError(result.Message ?? "거래처 조회 중 오류가 발생했습니다.");
-                return;
+                return false;
             }
 
             Items.Clear();
@@ -119,6 +119,12 @@ namespace Mes.Wpf.Modules.Partners.ViewModels
             {
                 Items.Add(item);
             }
+
+            ApplyListPage(
+                result.Data?.Total ?? 0,
+                result.Data?.Page ?? ListPage,
+                result.Data?.Size ?? ListPageSize);
+            return true;
         }
 
         protected override void Reset()
@@ -702,8 +708,8 @@ namespace Mes.Wpf.Modules.Partners.ViewModels
         {
             var queryParts = new List<string>
             {
-                "page=1",
-                "size=100"
+                $"page={ListPage}",
+                $"size={ListPageSize}"
             };
 
             if (!string.IsNullOrWhiteSpace(SearchKeyword))

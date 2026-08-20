@@ -222,7 +222,7 @@ namespace Mes.Wpf.Modules.Shipments.ViewModels
             await SearchAsync();
         }
 
-        protected override async Task LoadListAsync()
+        protected override async Task<bool> LoadListAsync()
         {
             var route = BuildListUrl();
 
@@ -236,7 +236,7 @@ namespace Mes.Wpf.Modules.Shipments.ViewModels
                 CanGoNextPage = false;
 
                 _messageService.ShowError(result.Message ?? "출하 목록 조회 중 오류가 발생했습니다.");
-                return;
+                return false;
             }
 
             Items.Clear();
@@ -317,6 +317,7 @@ namespace Mes.Wpf.Modules.Shipments.ViewModels
             OnPropertyChanged(nameof(TotalCountText));
             OnPropertyChanged(nameof(DisplayedCount));
             OnPropertyChanged(nameof(ListSummaryText));
+            return true;
         }
 
         protected override void Reset()

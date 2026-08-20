@@ -123,7 +123,6 @@ class OutsourceWorkGroup(Base):
     work_done_remark: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     canceled_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
-    remark: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

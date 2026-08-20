@@ -251,12 +251,12 @@ namespace Mes.Wpf.Modules.OrderLineList.ViewModels
             await SearchAsync();
         }
 
-        protected override async Task LoadListAsync()
+        protected override async Task<bool> LoadListAsync()
         {
             if (OrderLineId <= 0)
             {
                 _messageService.ShowWarning("유효한 수주 ID가 없습니다.");
-                return;
+                return false;
             }
 
             var result = await _apiClient.GetAsync<OrderLineDetailDto>(
@@ -266,11 +266,12 @@ namespace Mes.Wpf.Modules.OrderLineList.ViewModels
             if (!result.Success || result.Data == null)
             {
                 _messageService.ShowError(result.Message ?? "수주상세 조회 중 오류가 발생했습니다.");
-                return;
+                return false;
             }
 
             ApplyDetail(result.Data);
             IsEditMode = false;
+            return true;
         }
 
         protected override void Reset()

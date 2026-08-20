@@ -20,6 +20,8 @@ namespace Mes.Wpf.Modules.ProductionDaily.ViewModels
         private string _productKeyword = string.Empty;
         private string _selectedStatus = "IN_PROGRESS";
         private int _totalCount;
+        private int _currentPage = 1;
+        private int _pageSize = 100;
 
         public ProductionDailyPageViewModel(
             IApiClient apiClient,
@@ -35,14 +37,27 @@ namespace Mes.Wpf.Modules.ProductionDaily.ViewModels
                 new("COMPLETED", "완료")
             };
 
-            SearchCommand = new AsyncRelayCommand(SearchAsync, () => !IsLoading);
+            SearchCommand = new AsyncRelayCommand(SearchFirstPageAsync, () => !IsLoading);
             ResetCommand = new AsyncRelayCommand(ResetAsync, () => !IsLoading);
+            PreviousPageCommand = new AsyncRelayCommand(
+                GoPreviousPageAsync,
+                () => !IsLoading && HasPreviousPage);
+            NextPageCommand = new AsyncRelayCommand(
+                GoNextPageAsync,
+                () => !IsLoading && HasNextPage);
         }
 
         public ObservableCollection<ProductionDailyRowDto> Items { get; }
         public ObservableCollection<ProductionDailyStatusOption> StatusOptions { get; }
         public ICommand SearchCommand { get; }
         public ICommand ResetCommand { get; }
+        public ICommand PreviousPageCommand { get; }
+        public ICommand NextPageCommand { get; }
+
+        public int TotalPages => Math.Max(1, (int)Math.Ceiling((double)TotalCount / _pageSize));
+        public bool HasPreviousPage => _currentPage > 1;
+        public bool HasNextPage => _currentPage < TotalPages;
+        public string PageDisplayText => $"{_currentPage:N0} / {TotalPages:N0} 페이지 (총 {TotalCount:N0}건)";
 
         public bool IsLoading
         {
@@ -77,15 +92,28 @@ namespace Mes.Wpf.Modules.ProductionDaily.ViewModels
         public int TotalCount
         {
             get => _totalCount;
-            set => SetProperty(ref _totalCount, value);
+            set
+            {
+                if (SetProperty(ref _totalCount, value))
+                {
+                    RaisePagePropertiesChanged();
+                }
+            }
         }
 
         public async Task InitializeAsync()
         {
+            await SearchFirstPageAsync();
+        }
+
+        private async Task SearchFirstPageAsync()
+        {
+            _currentPage = 1;
+            RaisePagePropertiesChanged();
             await SearchAsync();
         }
 
-        private async Task SearchAsync()
+        private async Task<bool> SearchAsync()
         {
             IsLoading = true;
 
@@ -96,7 +124,7 @@ namespace Mes.Wpf.Modules.ProductionDaily.ViewModels
                 if (!result.Success || result.Data == null)
                 {
                     _messageService.ShowError(result.Message ?? "생산진행현황 조회 중 오류가 발생했습니다.");
-                    return;
+                    return false;
                 }
 
                 Items.Clear();
@@ -107,6 +135,10 @@ namespace Mes.Wpf.Modules.ProductionDaily.ViewModels
                 }
 
                 TotalCount = result.Data.Total;
+                _currentPage = Math.Max(1, result.Data.Page);
+                _pageSize = result.Data.Size > 0 ? result.Data.Size : _pageSize;
+                RaisePagePropertiesChanged();
+                return true;
             }
             finally
             {
@@ -119,16 +151,47 @@ namespace Mes.Wpf.Modules.ProductionDaily.ViewModels
             PartnerKeyword = string.Empty;
             ProductKeyword = string.Empty;
             SelectedStatus = "IN_PROGRESS";
+            _currentPage = 1;
 
             await SearchAsync();
+        }
+
+        private async Task GoPreviousPageAsync()
+        {
+            if (HasPreviousPage)
+            {
+                var previousPage = _currentPage;
+                _currentPage--;
+                RaisePagePropertiesChanged();
+                if (!await SearchAsync())
+                {
+                    _currentPage = previousPage;
+                    RaisePagePropertiesChanged();
+                }
+            }
+        }
+
+        private async Task GoNextPageAsync()
+        {
+            if (HasNextPage)
+            {
+                var previousPage = _currentPage;
+                _currentPage++;
+                RaisePagePropertiesChanged();
+                if (!await SearchAsync())
+                {
+                    _currentPage = previousPage;
+                    RaisePagePropertiesChanged();
+                }
+            }
         }
 
         private string BuildListUrl()
         {
             var queryParts = new List<string>
             {
-                "page=1",
-                "size=200",
+                $"page={_currentPage}",
+                $"size={_pageSize}",
                 $"status={Uri.EscapeDataString(SelectedStatus)}"
             };
 
@@ -156,6 +219,25 @@ namespace Mes.Wpf.Modules.ProductionDaily.ViewModels
             {
                 resetCommand.RaiseCanExecuteChanged();
             }
+
+            if (PreviousPageCommand is AsyncRelayCommand previousPageCommand)
+            {
+                previousPageCommand.RaiseCanExecuteChanged();
+            }
+
+            if (NextPageCommand is AsyncRelayCommand nextPageCommand)
+            {
+                nextPageCommand.RaiseCanExecuteChanged();
+            }
+        }
+
+        private void RaisePagePropertiesChanged()
+        {
+            OnPropertyChanged(nameof(TotalPages));
+            OnPropertyChanged(nameof(HasPreviousPage));
+            OnPropertyChanged(nameof(HasNextPage));
+            OnPropertyChanged(nameof(PageDisplayText));
+            RaiseCommandCanExecuteChanged();
         }
     }
 }

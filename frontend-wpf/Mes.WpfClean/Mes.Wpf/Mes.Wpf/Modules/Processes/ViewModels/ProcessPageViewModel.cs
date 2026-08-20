@@ -99,7 +99,7 @@ namespace Mes.Wpf.Modules.Processes.ViewModels
 
         
 
-        protected override async Task LoadListAsync()
+        protected override async Task<bool> LoadListAsync()
         {
             var route = BuildListUrl();
             var result = await _apiClient.GetAsync<ProcessListDto>(route);
@@ -107,12 +107,18 @@ namespace Mes.Wpf.Modules.Processes.ViewModels
             if (!result.Success)
             {
                 _messageService.ShowError(result.Message ?? "공정 조회 중 오류");
-                return;
+                return false;
             }
 
             Items.Clear();
             foreach (var item in result.Data?.Items ?? [])
                 Items.Add(item);
+
+            ApplyListPage(
+                result.Data?.Total ?? 0,
+                result.Data?.Page ?? ListPage,
+                result.Data?.Size ?? ListPageSize);
+            return true;
         }
         protected override void Reset()
         {
@@ -307,8 +313,8 @@ namespace Mes.Wpf.Modules.Processes.ViewModels
         {
             var queryParts = new List<string>
             {
-                "page=1",
-                "size=100"
+                $"page={ListPage}",
+                $"size={ListPageSize}"
             };
 
             if (!string.IsNullOrWhiteSpace(SearchKeyword))

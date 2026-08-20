@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 from datetime import date
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from fastapi import HTTPException
 from sqlalchemy import BigInteger, create_engine
@@ -97,14 +97,73 @@ class InspectionScheduleServiceTests(unittest.TestCase):
         refresh.assert_called_once_with(self.db, {1})
 
     def test_start_inspection_schedule_rejects_non_today_schedule(self) -> None:
-        with self.assertRaises(HTTPException) as ctx:
-            start_inspection_schedule(
-                self.db,
-                1,
-                today=date(2026, 1, 6),
-            )
+        context_token = inspection_schedule_service.request_id_context.set(
+            "inspection-date-test"
+        )
+        try:
+            with self.assertLogs("mes.inspection", level="WARNING") as logs:
+                with self.assertRaises(HTTPException) as ctx:
+                    start_inspection_schedule(
+                        self.db,
+                        1,
+                        today=date(2026, 1, 6),
+                    )
+        finally:
+            inspection_schedule_service.request_id_context.reset(context_token)
 
         self.assertEqual(409, ctx.exception.status_code)
+        self.assertEqual(
+            (
+                "오늘 스케줄만 검수를 시작할 수 있습니다. "
+                "선택 검수일: 2026-01-05, 서버 기준일: 2026-01-06"
+            ),
+            ctx.exception.detail,
+        )
+        self.assertIn("request_id=inspection-date-test", logs.output[0])
+        self.assertIn("schedule_id=1", logs.output[0])
+        self.assertIn("inspection_date=2026-01-05", logs.output[0])
+        self.assertIn("business_date=2026-01-06", logs.output[0])
+
+    def test_inspection_start_uses_database_korea_date_for_postgresql(self) -> None:
+        db = Mock()
+        db.get_bind.return_value.dialect.name = "postgresql"
+        db.execute.return_value.scalar_one.return_value = date(2026, 8, 19)
+
+        with patch.object(
+            inspection_schedule_service,
+            "korea_today",
+            return_value=date(2026, 8, 20),
+        ):
+            with self.assertLogs("mes.inspection", level="ERROR") as logs:
+                business_date = (
+                    inspection_schedule_service._resolve_inspection_start_business_date(
+                        db,
+                        today=None,
+                    )
+                )
+
+        self.assertEqual(date(2026, 8, 19), business_date)
+        db.execute.assert_called_once_with(
+            inspection_schedule_service._KOREA_BUSINESS_DATE_SQL
+        )
+        self.assertIn("database_date=2026-08-19", logs.output[0])
+        self.assertIn("application_date=2026-08-20", logs.output[0])
+        self.assertIn("selected_source=database", logs.output[0])
+
+    def test_inspection_start_uses_application_korea_date_for_non_postgresql(self) -> None:
+        with patch.object(
+            inspection_schedule_service,
+            "korea_today",
+            return_value=date(2026, 8, 19),
+        ):
+            business_date = (
+                inspection_schedule_service._resolve_inspection_start_business_date(
+                    self.db,
+                    today=None,
+                )
+            )
+
+        self.assertEqual(date(2026, 8, 19), business_date)
 
     def test_create_inspection_schedule_creates_single_schedule(self) -> None:
         payload = InspectionScheduleCreate(

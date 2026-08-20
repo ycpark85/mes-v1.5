@@ -63,6 +63,7 @@ namespace Mes.Wpf.Views.Shell
         private readonly HashSet<string> _permissionCodes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private readonly DefectTypePageViewModel _defectTypePageViewModel;
         private readonly RoutingTemplatePageViewModel _routingTemplatePageViewModel;
+        private readonly DrawingFileOpener _drawingFileOpener;
         private readonly DrawingViewer _drawingViewer;
 
         public MainWindow()
@@ -97,12 +98,12 @@ namespace Mes.Wpf.Views.Shell
                 Title = $"MES - {_loginResponse.User.UserName}";
             }
 
-            var drawingFileOpener = new DrawingFileOpener(_apiClient, _messageService);
+            _drawingFileOpener = new DrawingFileOpener(_apiClient, _messageService);
 
             _drawingViewer = new DrawingViewer(
                 _apiClient,
                 _messageService,
-                drawingFileOpener);
+                _drawingFileOpener);
 
             _defectTypePageViewModel = new DefectTypePageViewModel(
                 _apiClient,
@@ -338,11 +339,10 @@ namespace Mes.Wpf.Views.Shell
         {
             var drawingPage = new DrawingPage();
 
-            var drawingFileOpener = new DrawingFileOpener(_apiClient, _messageService);
             var drawingViewModel = new DrawingPageViewModel(
                 _apiClient,
                 _messageService,
-                drawingFileOpener);
+                _drawingFileOpener);
 
             drawingPage.DataContext = drawingViewModel;
 
@@ -359,11 +359,10 @@ namespace Mes.Wpf.Views.Shell
         {
             var page = new PendingNewDrawingPage();
 
-            var drawingFileOpener = new DrawingFileOpener(_apiClient, _messageService);
             var viewModel = new PendingNewDrawingPageViewModel(
                 _apiClient,
                 _messageService,
-                drawingFileOpener);
+                _drawingFileOpener);
 
             page.DataContext = viewModel;
 
@@ -380,16 +379,10 @@ namespace Mes.Wpf.Views.Shell
         {
             var productPage = new ProductPage();
 
-            var drawingFileOpener = new DrawingFileOpener(_apiClient, _messageService);
-            var drawingViewer = new DrawingViewer(
-                _apiClient,
-                _messageService,
-                drawingFileOpener);
-
             var productViewModel = new ProductPageViewModel(
                 _apiClient,
                 _messageService,
-                drawingViewer);
+                _drawingViewer);
 
             productPage.DataContext = productViewModel;
 
@@ -406,16 +399,10 @@ namespace Mes.Wpf.Views.Shell
         {
             var page = new OrderLineCreatePage();
 
-            var drawingFileOpener = new DrawingFileOpener(_apiClient, _messageService);
-            var drawingViewer = new DrawingViewer(
-                _apiClient,
-                _messageService,
-                drawingFileOpener);
-
             var viewModel = new OrderLineCreatePageViewModel(
                 _apiClient,
                 _messageService,
-                drawingViewer);
+                _drawingViewer);
 
             page.DataContext = viewModel;
 
@@ -472,18 +459,11 @@ namespace Mes.Wpf.Views.Shell
 
         private async Task OpenLotCreateWindowAsync(OrderLineListItemDto item)
         {
-            var drawingFileOpener = new DrawingFileOpener(_apiClient, _messageService);
-
-            var drawingViewer = new DrawingViewer(
-                _apiClient,
-                _messageService,
-                drawingFileOpener);
-
             var vm = new LotCreateWindowViewModel(
                 _apiClient,
                 _messageService,
-                drawingViewer,
-                drawingFileOpener);
+                _drawingViewer,
+                _drawingFileOpener);
 
             var window = new LotCreateWindow(vm)
             {

@@ -24,6 +24,9 @@ namespace Mes.Wpf.Modules.Products.ViewModels
         private string _loadingMessage = "처리 중입니다...";
         private ProductDto? _selectedProduct;
         private LotListItemDto? _selectedLot;
+        private int _productPage = 1;
+        private int _productPageSize = 100;
+        private int _productTotalCount;
 
         public ProductMonitoringPageViewModel(
             IApiClient apiClient,
@@ -38,10 +41,16 @@ namespace Mes.Wpf.Modules.Products.ViewModels
             LotItems = new ObservableCollection<LotListItemDto>();
             UseYnOptions = new ObservableCollection<string> { "사용", "미사용" };
 
-            SearchCommand = new AsyncRelayCommand(SearchAsync);
+            SearchCommand = new AsyncRelayCommand(SearchFirstPageAsync);
             ResetCommand = new AsyncRelayCommand(ResetAsync);
             LoadHistoryCommand = new AsyncRelayCommand(LoadHistoryAsync);
             OpenLotDetailCommand = new RelayCommand(_ => OpenLotDetail());
+            ProductPreviousPageCommand = new AsyncRelayCommand(
+                LoadPreviousProductPageAsync,
+                () => ProductHasPreviousPage && !IsLoading);
+            ProductNextPageCommand = new AsyncRelayCommand(
+                LoadNextProductPageAsync,
+                () => ProductHasNextPage && !IsLoading);
            
         }
 
@@ -60,6 +69,18 @@ namespace Mes.Wpf.Modules.Products.ViewModels
         public ICommand LoadHistoryCommand { get; }
 
         public ICommand OpenLotDetailCommand { get; }
+
+        public ICommand ProductPreviousPageCommand { get; }
+
+        public ICommand ProductNextPageCommand { get; }
+
+        public int ProductTotalPages => Math.Max(1, (int)Math.Ceiling((double)_productTotalCount / _productPageSize));
+
+        public bool ProductHasPreviousPage => _productPage > 1;
+
+        public bool ProductHasNextPage => _productPage < ProductTotalPages;
+
+        public string ProductPageDisplayText => $"{_productPage:N0} / {ProductTotalPages:N0} 페이지 (총 {_productTotalCount:N0}건)";
 
         public string SearchKeyword
         {
@@ -82,7 +103,13 @@ namespace Mes.Wpf.Modules.Products.ViewModels
         public bool IsLoading
         {
             get => _isLoading;
-            set => SetProperty(ref _isLoading, value);
+            set
+            {
+                if (SetProperty(ref _isLoading, value))
+                {
+                    RaiseProductPageCommandStates();
+                }
+            }
         }
 
         public string LoadingMessage
@@ -143,11 +170,19 @@ namespace Mes.Wpf.Modules.Products.ViewModels
             OnPropertyChanged(nameof(SelectedProductName));
             OnPropertyChanged(nameof(SelectedProductSummaryText));
             OnPropertyChanged(nameof(LotCountText));
+            ResetProductPagination();
 
             return Task.CompletedTask;
         }
 
-        private async Task SearchAsync()
+        private async Task SearchFirstPageAsync()
+        {
+            _productPage = 1;
+            RaiseProductPaginationProperties();
+            await LoadProductsAsync();
+        }
+
+        private async Task<bool> LoadProductsAsync()
         {
             try
             {
@@ -161,8 +196,13 @@ namespace Mes.Wpf.Modules.Products.ViewModels
                 if (!result.Success || result.Data == null)
                 {
                     _messageService.ShowError(result.Message ?? "품목 목록을 조회하지 못했습니다.");
-                    return;
+                    return false;
                 }
+
+                _productPage = Math.Max(1, result.Data.Page);
+                _productPageSize = result.Data.Size > 0 ? result.Data.Size : _productPageSize;
+                _productTotalCount = Math.Max(0, result.Data.Total);
+                RaiseProductPaginationProperties();
 
                 ProductItems.Clear();
 
@@ -175,6 +215,7 @@ namespace Mes.Wpf.Modules.Products.ViewModels
                 SelectedLot = null;
                 LotItems.Clear();
                 OnPropertyChanged(nameof(LotCountText));
+                return true;
             }
             finally
             {
@@ -193,12 +234,65 @@ namespace Mes.Wpf.Modules.Products.ViewModels
 
             ProductItems.Clear();
             LotItems.Clear();
+            ResetProductPagination();
 
             OnPropertyChanged(nameof(SelectedProductName));
             OnPropertyChanged(nameof(SelectedProductSummaryText));
             OnPropertyChanged(nameof(LotCountText));
 
             return Task.CompletedTask;
+        }
+
+        private async Task LoadPreviousProductPageAsync()
+        {
+            if (ProductHasPreviousPage)
+            {
+                await LoadProductPageAsync(_productPage - 1);
+            }
+        }
+
+        private async Task LoadNextProductPageAsync()
+        {
+            if (ProductHasNextPage)
+            {
+                await LoadProductPageAsync(_productPage + 1);
+            }
+        }
+
+        private async Task LoadProductPageAsync(int targetPage)
+        {
+            var previousPage = _productPage;
+            _productPage = Math.Max(1, targetPage);
+            RaiseProductPaginationProperties();
+
+            if (!await LoadProductsAsync())
+            {
+                _productPage = previousPage;
+                RaiseProductPaginationProperties();
+            }
+        }
+
+        private void ResetProductPagination()
+        {
+            _productPage = 1;
+            _productPageSize = 100;
+            _productTotalCount = 0;
+            RaiseProductPaginationProperties();
+        }
+
+        private void RaiseProductPaginationProperties()
+        {
+            OnPropertyChanged(nameof(ProductTotalPages));
+            OnPropertyChanged(nameof(ProductHasPreviousPage));
+            OnPropertyChanged(nameof(ProductHasNextPage));
+            OnPropertyChanged(nameof(ProductPageDisplayText));
+            RaiseProductPageCommandStates();
+        }
+
+        private void RaiseProductPageCommandStates()
+        {
+            (ProductPreviousPageCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
+            (ProductNextPageCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
         }
 
         private async Task LoadHistoryAsync()
@@ -299,7 +393,7 @@ namespace Mes.Wpf.Modules.Products.ViewModels
 
         private string BuildProductSearchUrl()
         {
-            var route = $"{ApiRoutes.Products}?page=1&size=100";
+            var route = $"{ApiRoutes.Products}?page={_productPage}&size={_productPageSize}";
 
             var partnerKeyword = PartnerKeyword?.Trim();
             var keyword = SearchKeyword?.Trim();
