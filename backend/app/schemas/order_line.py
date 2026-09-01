@@ -17,9 +17,10 @@ class OrderLineStatus(str, Enum):
 class OrderLinePlanType(str, Enum):
     AUTO_PRODUCTION = "AUTO_PRODUCTION"
     AUTO_STOCK_SHIP = "AUTO_STOCK_SHIP"
+    STOCK_SHIP_COMPLETE = "STOCK_SHIP_COMPLETE"
     PARTIAL_STOCK_ONLY_CLOSE = "PARTIAL_STOCK_ONLY_CLOSE"
     PARTIAL_STOCK_PLUS_PRODUCTION = "PARTIAL_STOCK_PLUS_PRODUCTION"
-    STOCK_REPLENISHMENT = "STOCK_REPLENISHMENT"    
+    STOCK_REPLENISHMENT = "STOCK_REPLENISHMENT"
 
 
 class OrderLineBase(BaseModel):
@@ -102,6 +103,7 @@ class OrderLineOut(OrderLineBase):
     recommended_production_qty: int = 0
     planned_production_qty: int = 0
     decision_required: bool = False
+    allowed_plan_types: List[OrderLinePlanType] = Field(default_factory=list)
 
     plan_type: Optional[OrderLinePlanType] = None
     plan_type_display: Optional[str] = None
@@ -234,11 +236,6 @@ class OrderLineProductionPolicy(str, Enum):
     ORDER_ONLY = "ORDER_ONLY"
     ALLOW_STOCK_BUILD = "ALLOW_STOCK_BUILD"
     INVENTORY_ONLY_CLOSE = "INVENTORY_ONLY_CLOSE"
-
-class OrderLineFulfillmentPlanUpdate(BaseModel):
-    fulfillment_mode: OrderLineFulfillmentMode
-    production_policy: OrderLineProductionPolicy
-    extra_production_qty: int = Field(0, ge=0)    
 
 class OrderLinePlanConfirmRequest(BaseModel):
     plan_type: OrderLinePlanType

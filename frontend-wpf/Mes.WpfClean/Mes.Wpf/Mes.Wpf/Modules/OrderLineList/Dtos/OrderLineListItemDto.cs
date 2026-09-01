@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Text.Json.Serialization;
 
 namespace Mes.Wpf.Modules.OrderLineList.Dtos
@@ -95,6 +96,9 @@ namespace Mes.Wpf.Modules.OrderLineList.Dtos
         [JsonPropertyName("decision_required")]
         public bool DecisionRequired { get; set; }
 
+        [JsonPropertyName("allowed_plan_types")]
+        public List<string> AllowedPlanTypes { get; set; } = new();
+
         [JsonPropertyName("target_ship_qty")]
         public int TargetShipQty { get; set; }
 
@@ -132,7 +136,7 @@ namespace Mes.Wpf.Modules.OrderLineList.Dtos
         {
             "OPEN" => "LOT 생성대기",
             "CLOSED" => "생산중",
-            "DONE" => "생산완료",
+            "DONE" => "완료",
             "CANCELED" => "취소",
             _ => Status
         };

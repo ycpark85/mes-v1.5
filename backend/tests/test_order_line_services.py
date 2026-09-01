@@ -40,20 +40,23 @@ from app.schemas.order_line import (
     OrderLineBulkCommitRowChoice,
     OrderLineBulkImportRowIn,
     OrderLineCreate,
-    OrderLineFulfillmentPlanUpdate,
+    OrderLinePlanConfirmRequest,
     OrderLineShortCloseRequest,
     OrderLineUpdate,
 )
 from app.schemas.order_line_detail import OrderLineDetailUpdate
 from app.services.order_line_cancel_service import cancel_order_line_status
 from app.services.order_line_base_lot_service import create_base_lot_from_plan
-from app.services.order_line_creation_service import create_order_line_with_policy
+from app.services.order_line_creation_service import (
+    create_order_line_with_policy,
+    create_primary_lot_for_order_line,
+)
 from app.services.order_line_delete_service import delete_order_line_group
 from app.services.order_line_detail_query import get_order_line_detail_dto
 from app.services.order_line_detail_update_service import update_order_line_detail_fields
 from app.services.order_line_lot_context_query import get_lot_create_context_dto
 from app.services.order_line_list_query import list_order_lines_for_grid
-from app.services.order_line_plan_service import update_order_line_fulfillment_plan_config
+from app.services.order_line_plan_service import confirm_order_line_plan_decision
 from app.services.order_line_response_builder import build_order_line_out, get_order_line_out_by_id
 from app.services.order_line_short_close_service import short_close_order_line_status
 from app.services.order_line_update_service import update_order_line_fields
@@ -167,7 +170,7 @@ class OrderLineServicesTests(unittest.TestCase):
         self.assertEqual([], shipment_lines)
         refresh.assert_called_once_with(self.db, order_line.order_line_id)
 
-    def test_create_order_line_with_enough_inventory_creates_stock_waiting_line(self) -> None:
+    def test_create_order_line_with_enough_inventory_waits_for_decision(self) -> None:
         self._seed_inventory(product_id=1, qty=300)
 
         order_line = create_order_line_with_policy(self.db, self._payload("SO-STOCK", 100))
@@ -179,15 +182,92 @@ class OrderLineServicesTests(unittest.TestCase):
         shipment_lines = self.db.execute(
             select(ShipmentLine).where(ShipmentLine.order_line_id == order_line.order_line_id)
         ).scalars().all()
+        items, _ = list_order_lines_for_grid(
+            self.db,
+            page=1,
+            size=20,
+            status_group="IN_PROGRESS",
+        )
+        created_item = next(item for item in items if item["order_line_id"] == order_line.order_line_id)
 
-        self.assertEqual("DONE", order_line.status)
-        self.assertTrue(order_line.decision_made)
-        self.assertEqual("AUTO_STOCK_SHIP", histories[0].plan_type)
-        self.assertEqual(102, histories[0].stock_ship_qty)
+        self.assertEqual("OPEN", order_line.status)
+        self.assertFalse(order_line.decision_made)
+        self.assertEqual("INVENTORY_FIRST", order_line.fulfillment_mode)
+        self.assertEqual([], histories)
         self.assertEqual([], lots)
+        self.assertEqual([], shipment_lines)
+        self.assertTrue(created_item["decision_required"])
+        self.assertEqual(
+            ["STOCK_SHIP_COMPLETE", "STOCK_REPLENISHMENT"],
+            created_item["allowed_plan_types"],
+        )
+
+    def test_confirm_enough_inventory_completes_stock_shipment(self) -> None:
+        self._seed_inventory(product_id=1, qty=300)
+        order_line = create_order_line_with_policy(self.db, self._payload("SO-STOCK-CONFIRM", 100))
+
+        with (
+            patch("app.services.shipment_confirm_service.refresh_order_line_snapshot"),
+            patch("app.services.shipment_confirm_service.refresh_order_line_snapshots_for_product"),
+            patch("app.services.order_line_plan_service.refresh_order_line_snapshot"),
+            patch("app.services.order_line_plan_service.refresh_order_line_snapshots_for_product"),
+        ):
+            confirmed, history, _, _ = confirm_order_line_plan_decision(
+                self.db,
+                order_line_id=order_line.order_line_id,
+                payload=OrderLinePlanConfirmRequest(plan_type="STOCK_SHIP_COMPLETE"),
+            )
+
+        shipment_lines = self.db.execute(
+            select(ShipmentLine).where(ShipmentLine.order_line_id == order_line.order_line_id)
+        ).scalars().all()
+        inventory = self.db.execute(
+            select(ProductInventory).where(ProductInventory.product_id == 1)
+        ).scalar_one()
+
+        self.assertEqual("DONE", confirmed.status)
+        self.assertTrue(confirmed.decision_made)
+        self.assertEqual("STOCK_SHIP_COMPLETE", history.plan_type)
+        self.assertEqual(102, history.stock_ship_qty)
         self.assertEqual(1, len(shipment_lines))
-        self.assertEqual("WAITING", shipment_lines[0].status)
-        self.assertEqual(102, shipment_lines[0].ship_qty)
+        self.assertEqual("DONE", shipment_lines[0].status)
+        self.assertEqual(102, shipment_lines[0].shipped_qty)
+        self.assertEqual(198, inventory.current_qty)
+
+    def test_confirm_stock_replenishment_creates_order_qty_lot_without_using_inventory(self) -> None:
+        self._seed_inventory(product_id=1, qty=50)
+        order_line = create_order_line_with_policy(self.db, self._payload("SO-STOCK-BUILD", 100))
+
+        with (
+            patch("app.services.order_line_plan_service.refresh_order_line_snapshot"),
+            patch("app.services.order_line_plan_service.refresh_order_line_snapshots_for_product"),
+            patch("app.services.order_line_creation_service.refresh_order_line_snapshot"),
+        ):
+            confirmed, history, _, product = confirm_order_line_plan_decision(
+                self.db,
+                order_line_id=order_line.order_line_id,
+                payload=OrderLinePlanConfirmRequest(plan_type="STOCK_REPLENISHMENT"),
+            )
+            lot = create_primary_lot_for_order_line(
+                self.db,
+                confirmed,
+                product,
+                lot_qty=confirmed.order_qty,
+            )
+
+        shipment_lines = self.db.execute(
+            select(ShipmentLine).where(ShipmentLine.order_line_id == order_line.order_line_id)
+        ).scalars().all()
+        inventory = self.db.execute(
+            select(ProductInventory).where(ProductInventory.product_id == 1)
+        ).scalar_one()
+
+        self.assertEqual("CLOSED", confirmed.status)
+        self.assertEqual("STOCK_REPLENISHMENT", history.plan_type)
+        self.assertEqual(100, history.production_qty)
+        self.assertEqual(100, lot.lot_qty)
+        self.assertEqual([], shipment_lines)
+        self.assertEqual(50, inventory.current_qty)
 
     def test_create_order_line_with_partial_inventory_waits_for_decision(self) -> None:
         self._seed_inventory(product_id=1, qty=50)
@@ -1102,75 +1182,6 @@ class OrderLineServicesTests(unittest.TestCase):
 
         self.assertEqual(409, ctx.exception.status_code)
         self.assertEqual("CLOSED", order_line.status)
-
-    def test_update_order_line_fulfillment_plan_config_saves_production_plan(self) -> None:
-        order_line = self._seed_open_order_line_without_lots()
-
-        updated = update_order_line_fulfillment_plan_config(
-            self.db,
-            order_line_id=order_line.order_line_id,
-            payload=OrderLineFulfillmentPlanUpdate(
-                fulfillment_mode="PRODUCTION_FIRST",
-                production_policy="ALLOW_STOCK_BUILD",
-                extra_production_qty=5,
-            ),
-        )
-
-        shipment_lines = self.db.execute(
-            select(ShipmentLine).where(ShipmentLine.order_line_id == order_line.order_line_id)
-        ).scalars().all()
-
-        self.assertTrue(updated.decision_made)
-        self.assertEqual("PRODUCTION_FIRST", updated.fulfillment_mode)
-        self.assertEqual("ALLOW_STOCK_BUILD", updated.production_policy)
-        self.assertEqual(5, updated.extra_production_qty)
-        self.assertEqual("OPEN", updated.status)
-        self.assertEqual([], shipment_lines)
-
-    def test_update_order_line_fulfillment_plan_config_creates_stock_waiting_when_no_production_needed(self) -> None:
-        order_line = self._seed_open_order_line_without_lots()
-        self._seed_inventory(product_id=1, qty=300)
-
-        updated = update_order_line_fulfillment_plan_config(
-            self.db,
-            order_line_id=order_line.order_line_id,
-            payload=OrderLineFulfillmentPlanUpdate(
-                fulfillment_mode="INVENTORY_FIRST",
-                production_policy="INVENTORY_ONLY_CLOSE",
-                extra_production_qty=0,
-            ),
-        )
-
-        shipment_lines = self.db.execute(
-            select(ShipmentLine).where(ShipmentLine.order_line_id == order_line.order_line_id)
-        ).scalars().all()
-
-        self.assertTrue(updated.decision_made)
-        self.assertEqual("INVENTORY_FIRST", updated.fulfillment_mode)
-        self.assertEqual("INVENTORY_ONLY_CLOSE", updated.production_policy)
-        self.assertEqual(0, updated.extra_production_qty)
-        self.assertEqual("CLOSED", updated.status)
-        self.assertEqual(1, len(shipment_lines))
-        self.assertEqual("WAITING", shipment_lines[0].status)
-        self.assertEqual(102, shipment_lines[0].ship_qty)
-
-    def test_update_order_line_fulfillment_plan_config_rejects_done_order_line(self) -> None:
-        order_line = self._seed_open_order_line_without_lots()
-        order_line.status = "DONE"
-        self.db.flush()
-
-        with self.assertRaises(HTTPException) as ctx:
-            update_order_line_fulfillment_plan_config(
-                self.db,
-                order_line_id=order_line.order_line_id,
-                payload=OrderLineFulfillmentPlanUpdate(
-                    fulfillment_mode="PRODUCTION_FIRST",
-                    production_policy="ORDER_ONLY",
-                    extra_production_qty=10,
-                ),
-            )
-
-        self.assertEqual(409, ctx.exception.status_code)
 
     def test_commit_order_line_bulk_creates_group_and_applies_product_name_change(self) -> None:
         payload = OrderLineBulkCommitRequest(

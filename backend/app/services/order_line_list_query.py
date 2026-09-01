@@ -16,6 +16,7 @@ from app.models.product_inventory import ProductInventory
 from app.models.product_inventory_movement import ProductInventoryMovement
 from app.models.shipment_line import ShipmentLine
 from app.services.order_line_display import to_plan_type_display
+from app.services.order_line_plan_policy import evaluate_order_line_plan_policy
 from app.services.ship_qty_policy import calculate_ship_qty
 
 
@@ -213,12 +214,11 @@ def list_order_lines_for_grid(
 
         target_ship_qty = int(calculate_ship_qty(partner_name or "", order_qty) or 0)
 
-        if available_inventory_qty <= 0:
-            recommended_mode = "PRODUCTION_FIRST"
-        elif available_inventory_qty >= target_ship_qty:
-            recommended_mode = "INVENTORY_FIRST"
-        else:
-            recommended_mode = "HYBRID"
+        plan_policy = evaluate_order_line_plan_policy(
+            available_inventory_qty=available_inventory_qty,
+            target_ship_qty=target_ship_qty,
+        )
+        recommended_mode = plan_policy.recommended_fulfillment_mode
 
         saved_mode = ol.fulfillment_mode or recommended_mode
         saved_policy = ol.production_policy or "ORDER_ONLY"
@@ -236,13 +236,11 @@ def list_order_lines_for_grid(
         if saved_policy != "ALLOW_STOCK_BUILD":
             extra_production_qty = 0
 
-        recommended_production_qty = (
-            target_ship_qty
-            if recommended_mode == "PRODUCTION_FIRST"
-            else max(target_ship_qty - available_inventory_qty, 0)
-        )
+        recommended_production_qty = plan_policy.recommended_production_qty
 
         planned_production_qty = base_planned_production_qty + extra_production_qty
+        if plan_type == "STOCK_REPLENISHMENT" and latest_plan_history is not None:
+            planned_production_qty = int(latest_plan_history.production_qty or 0)
 
         if saved_policy == "INVENTORY_ONLY_CLOSE":
             expected_ship_qty = min(available_inventory_qty, target_ship_qty)
@@ -266,7 +264,17 @@ def list_order_lines_for_grid(
 
         shortage_closed = ol.status == "DONE" and remaining_ship_qty > 0
         expected_short_qty = max(target_ship_qty - expected_ship_qty, 0)
-        decision_required = (not bool(ol.decision_made)) and ol.status in {"OPEN", "CLOSED"}
+        decision_required = (
+            not bool(ol.decision_made)
+            and ol.status == "OPEN"
+            and lot_count_int == 0
+            and bool(plan_policy.allowed_plan_types)
+        )
+        allowed_plan_types = (
+            [plan_type.value for plan_type in plan_policy.allowed_plan_types]
+            if decision_required
+            else []
+        )
 
         items.append(
             {
@@ -306,6 +314,7 @@ def list_order_lines_for_grid(
                 "recommended_production_qty": recommended_production_qty,
                 "planned_production_qty": planned_production_qty,
                 "decision_required": decision_required,
+                "allowed_plan_types": allowed_plan_types,
                 "expected_ship_qty": expected_ship_qty,
                 "expected_short_qty": expected_short_qty,
                 "ship_target_qty": ship_target_qty,

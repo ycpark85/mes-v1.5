@@ -38,6 +38,7 @@ from app.services.order_line_change_timeline import (
     OrderLineChangeTimelineEvent,
     get_order_line_change_timeline_events,
 )
+from app.services.order_line_display import to_plan_type_display
 from app.services.outsource_work_timeline import (
     OutsourceWorkTimelineEvent,
     get_outsource_work_timeline_events,
@@ -138,7 +139,7 @@ def get_lot_trace_detail_for_lot(
             memo=order_line.memo,
             plan_type=latest_plan_history.plan_type if latest_plan_history else None,
             plan_type_display=(
-                _to_plan_type_display(latest_plan_history.plan_type)
+                to_plan_type_display(latest_plan_history.plan_type)
                 if latest_plan_history
                 else None
             ),
@@ -837,21 +838,6 @@ def _format_defect_type_name(defect_type: DefectType | None) -> str | None:
         return category1
 
     return defect_type.code
-
-
-def _to_plan_type_display(plan_type: str | None) -> str | None:
-    if not plan_type:
-        return None
-
-    mapping = {
-        "AUTO_PRODUCTION": "자동 생산",
-        "AUTO_STOCK_SHIP": "재고 출고",
-        "PARTIAL_STOCK_ONLY_CLOSE": "재고만 출고 후 종료",
-        "PARTIAL_STOCK_PLUS_PRODUCTION": "부분재고 + 부족분 생산",
-        "STOCK_REPLENISHMENT": "재고비축 생산",
-    }
-
-    return mapping.get(plan_type, plan_type)
 
 
 def _build_lot_trace_progress(

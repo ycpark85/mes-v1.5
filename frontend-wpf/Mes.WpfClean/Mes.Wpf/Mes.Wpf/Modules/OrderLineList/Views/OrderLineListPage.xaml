@@ -471,10 +471,10 @@
                         </Grid>
                     </Border>
 
-                    <!-- 부분재고 처리방식 -->
+                    <!-- 처리계획 선택 -->
                     <Border Grid.Row="6"
                             Style="{StaticResource SubSectionBorderStyle}"
-                            Visibility="{Binding IsPartialStockDecisionVisible, Converter={StaticResource BoolToVisibilityConverter}}">
+                            Visibility="{Binding IsPlanDecisionVisible, Converter={StaticResource BoolToVisibilityConverter}}">
                         <Grid>
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto"/>
@@ -489,12 +489,12 @@
                             <TextBlock Grid.Row="0"
                                        FontWeight="SemiBold"
                                        Foreground="#111827"
-                                       Text="부분재고 처리방식"/>
+                                       Text="처리계획 선택"/>
 
                             <TextBlock Grid.Row="2"
                                        Foreground="#6B7280"
                                        TextWrapping="Wrap"
-                                       Text="현재고가 출고목표수량보다 부족합니다. 재고만 출고하고 종료할지, 부족분을 생산하여 목표수량을 맞출지 선택하세요."/>
+                                       Text="재고 출고, 부족분 생산 또는 발주수량 전체 재고생산 중 서버가 허용한 처리방식을 선택하세요."/>
 
                             <Grid Grid.Row="4">
                                 <Grid.ColumnDefinitions>
@@ -511,13 +511,10 @@
 
                                 <ComboBox Grid.Column="1"
                                           Height="30"
-                                          SelectedValue="{Binding SelectedPartialStockPlanType, Mode=TwoWay}"
-                                          SelectedValuePath="Tag">
-                                    <ComboBoxItem Tag="PARTIAL_STOCK_PLUS_PRODUCTION"
-                                                  Content="부족분 생산 후 목표수량 출고"/>
-                                    <ComboBoxItem Tag="PARTIAL_STOCK_ONLY_CLOSE"
-                                                  Content="재고만 출고 후 종료"/>
-                                </ComboBox>
+                                          ItemsSource="{Binding PlanOptions}"
+                                          DisplayMemberPath="Value"
+                                          SelectedValue="{Binding SelectedPlanType, Mode=TwoWay}"
+                                          SelectedValuePath="Key"/>
 
                                 <TextBlock Grid.Column="2"
                                            Margin="12,0,0,0"
@@ -528,21 +525,21 @@
                                          Height="30"
                                          Padding="6,0"
                                          VerticalContentAlignment="Center"
-                                         Text="{Binding PartialStockPlanMemo, UpdateSourceTrigger=PropertyChanged}"/>
+                                         Text="{Binding PlanMemo, UpdateSourceTrigger=PropertyChanged}"/>
 
                                 <Button Grid.Column="4"
                                         Margin="10,0,0,0"
-                                        Height="30"
-                                        MinWidth="90"
-                                        Content="처리 확정"
-                                        IsEnabled="{Binding CanConfirmPartialStockPlan}"
-                                        Command="{Binding ConfirmPartialStockPlanCommand}"/>
+                                         Height="30"
+                                         MinWidth="90"
+                                         Content="처리 확정"
+                                         IsEnabled="{Binding CanConfirmPlan}"
+                                         Command="{Binding ConfirmPlanCommand}"/>
                             </Grid>
 
                             <TextBlock Grid.Row="6"
                                        Foreground="#6B7280"
                                        TextWrapping="Wrap"
-                                       Text="재고만 출고 후 종료를 선택하면 LOT와 검수실적등록 없이 재고 출하대기가 생성됩니다. 부족분 생산을 선택하면 기존재고분과 검수분 출하대기는 검수실적등록에서 함께 처리됩니다."/>
+                                       Text="재고 출고완료는 즉시 재고를 차감합니다. 부족분 생산은 현재고를 예약합니다. 재고생산은 기존 재고를 사용하지 않고 발주수량 그대로 LOT를 생성합니다."/>
                         </Grid>
                     </Border>
                 </Grid>

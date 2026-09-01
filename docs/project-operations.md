@@ -228,8 +228,13 @@ Order planning separates physical inventory from available inventory.
 
 Stock usage rules:
 
-- Stock-only shipment and close: when the processing plan is confirmed, stock shipment lines are created and immediately confirmed. Inventory is deducted at that point because no production LOT or inspection result follows.
+- No available inventory: registration keeps the existing automatic-production behavior and creates the primary LOT immediately.
+- Any positive available inventory leaves a normal order line in decision-waiting state. Registration must not create a stock shipment line or mark the order line `DONE` before a user confirms the plan.
+- Enough inventory: the user chooses either stock shipment completion or full-order stock replenishment production.
+- Partial inventory: the user chooses partial stock plus shortage production, partial-stock-only close, or full-order stock replenishment production.
+- Stock-only shipment and close: when the processing plan is confirmed, stock shipment lines are created and immediately confirmed. Inventory is deducted and the order line becomes `DONE` in the same transaction because no production LOT or inspection result follows.
 - Partial stock plus production: when the processing plan is confirmed, stock shipment lines remain in `WAITING` status as reserved inventory. The reserved quantity is excluded from availability for later orders.
+- Full-order stock replenishment production does not reserve or deduct existing inventory. It creates one primary LOT using the original `order_qty`, not the calculated shipment target quantity.
 - When inspection result is saved for partial stock plus production, the reserved stock shipment lines are consumed first and changed to `DONE`; only any remaining requested stock shipment quantity is allocated from FIFO available inventory.
 - Unused stock reservations for the order line are canceled when final inspection settlement no longer uses them.
 
@@ -240,7 +245,8 @@ Order-line management refactor notes:
 - Order-line cancellation rules are handled by `order_line_cancel_service`.
 - Order-line delete rules are handled by `order_line_delete_service`.
 - Order-line update rules are handled by `order_line_update_service`.
-- Order-line fulfillment-plan save rules are handled by `order_line_plan_service`.
+- Allowed order-plan choices are calculated by `order_line_plan_policy` and are returned by the server. WPF must render only those server-provided choices.
+- Order-line plan confirmation and its inventory/reservation changes are handled by `order_line_plan_service`.
 - Order-line list lookup is handled directly by `order_line_list_query`.
 - OrderLine response assembly for partner/product display fields and optional plan summary is handled by `order_line_response_builder`.
 - Order-line detail DTO assembly is handled by `order_line_detail_query` so detail lookup, detail update responses, and cancel responses share the same display flag and timeline rules.
@@ -250,7 +256,7 @@ Order-line management refactor notes:
 - LOT creation context DTO assembly is handled by `order_line_lot_context_query`.
 - `OPEN` order lines may update the normal order fields. `CLOSED` order lines may update only `due_date`, `memo`, and `customer_po`.
 - `DONE` and `CANCELED` order lines may update only `memo` and `customer_po`.
-- Fulfillment-plan save is different from plan confirmation: it saves fulfillment mode, production policy, and extra production quantity to the order line, marks the decision as made, and creates stock shipment waiting lines only when no production quantity is needed.
+- The removed generic fulfillment-plan PATCH flow must not be reintroduced. A user decision uses the explicit plan-confirm endpoint so validation, history, inventory changes, and status changes stay in one transaction.
 - Bulk commit re-runs validation, applies approved ERP product-name/spec changes per row choice, creates all order lines in the same ERP order-number group together, and returns per-group success or error results.
 - Write endpoints roll back the DB session on handled HTTP/business errors and integrity errors before returning the API error.
 - Delete integrity-error messages use a safe order number/ID label so the original database error is not masked by response-message construction.
@@ -270,7 +276,7 @@ Order-line management refactor notes:
 - Quantity changes are blocked after outsource work, inspection, shipment, inventory movement, rework, or multi-LOT execution has started. Those cases require an additional LOT or an operational reduction/short-close flow instead of rewriting the released LOT quantity.
 - Short-close is allowed only for `CLOSED` order lines with positive remaining shipment quantity. It changes the order line to `DONE` and appends `[SHORT_CLOSE] remaining_ship_qty=...` to memo.
 - Detail timeline sorting normalizes naive and timezone-aware datetimes before sorting.
-- Service tests cover no-inventory automatic LOT creation, enough-inventory stock waiting creation, partial-inventory decision waiting, closed-order due-date synchronization, closed-order quantity-change rejection, detail action flags, LOT current-process display, plan-history timeline inclusion, canceled-order detail flags, order-line cancellation rules, same-order-number delete cascading, progressed-LOT delete blocking, plan-based base LOT creation, missing-decision base LOT blocking, LOT creation context drawing/candidate fields, detail edit due-date synchronization, detail edit blocked status, fulfillment-plan save, fulfillment-plan stock waiting creation, fulfillment-plan blocked status, bulk commit success, bulk product-name conflict blocking, response display field assembly, response lookup blocking, short-close success, and short-close no-remaining-quantity blocking.
+- Service tests cover no-inventory automatic LOT creation, enough-inventory decision waiting, stock shipment completion with inventory deduction, full-order stock replenishment LOT quantity, partial-inventory decision waiting, closed-order due-date synchronization, closed-order quantity-change rejection, detail action flags, LOT current-process display, plan-history timeline inclusion, canceled-order detail flags, order-line cancellation rules, same-order-number delete cascading, progressed-LOT delete blocking, plan-based base LOT creation, missing-decision base LOT blocking, LOT creation context drawing/candidate fields, detail edit due-date synchronization, detail edit blocked status, bulk commit success, bulk product-name conflict blocking, response display field assembly, response lookup blocking, short-close success, and short-close no-remaining-quantity blocking.
 
 Order-line management refactor closure:
 

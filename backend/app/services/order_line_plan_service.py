@@ -14,7 +14,6 @@ from app.models.product_inventory_lot import ProductInventoryLot
 from app.models.product_inventory_movement import ProductInventoryMovement
 from app.models.shipment_line import ShipmentLine
 from app.schemas.order_line import (
-    OrderLineFulfillmentPlanUpdate,
     OrderLineFulfillmentMode,
     OrderLinePlanConfirmRequest,
     OrderLinePlanType,
@@ -27,7 +26,7 @@ from app.services.production_daily_query import (
     refresh_order_line_snapshots_for_product,
 )
 from app.services.shipment_confirm_service import confirm_shipment_lines_in_session
-from app.services.ship_qty_policy import calculate_ship_qty, is_stock_replenishment_partner
+from app.services.ship_qty_policy import calculate_ship_qty
 
 
 def get_available_inventory_qty(db: Session, product_id: int) -> int:
@@ -134,45 +133,6 @@ def add_stock_shipment_lines_by_inventory_lot(
 
     db.flush()
     return created_lines
-
-
-def create_stock_shipment_waiting_if_needed(
-    db: Session,
-    order_line: OrderLine,
-    partner_name: str,
-) -> None:
-    existing = db.execute(
-        select(ShipmentLine)
-        .where(
-            ShipmentLine.order_line_id == order_line.order_line_id,
-            ShipmentLine.status != "CANCELED",
-            ShipmentLine.source_type == "STOCK",
-            ShipmentLine.inspection_result_id.is_(None),
-        )
-        .limit(1)
-    ).scalar_one_or_none()
-
-    if existing is not None:
-        return
-
-    available_inventory_qty = get_available_inventory_qty(db, order_line.product_id)
-    ship_target_qty = int(calculate_ship_qty(partner_name, int(order_line.order_qty or 0)) or 0)
-    already_shipped_qty = get_already_shipped_qty(db, order_line.order_line_id)
-    remaining_ship_qty = max(ship_target_qty - already_shipped_qty, 0)
-    ship_qty = min(available_inventory_qty, remaining_ship_qty)
-
-    if ship_qty <= 0:
-        return
-
-    add_stock_shipment_lines_by_inventory_lot(
-        db,
-        order_line=order_line,
-        ship_qty=ship_qty,
-        memo="처리계획 기반 재고 출하대기 생성",
-    )
-
-    if order_line.status == OrderLineStatus.OPEN.value:
-        order_line.status = OrderLineStatus.CLOSED.value
 
 
 def get_latest_plan_history(
@@ -284,46 +244,6 @@ def get_planned_production_qty(
     return base_planned_production_qty + extra_production_qty
 
 
-def update_order_line_fulfillment_plan_config(
-    db: Session,
-    *,
-    order_line_id: int,
-    payload: OrderLineFulfillmentPlanUpdate,
-) -> OrderLine:
-    order_line = db.get(OrderLine, order_line_id)
-    if not order_line or not order_line.is_active:
-        raise HTTPException(status_code=404, detail="OrderLine not found")
-
-    if order_line.status in {OrderLineStatus.DONE.value, OrderLineStatus.CANCELED.value}:
-        raise HTTPException(status_code=409, detail="DONE 또는 CANCELED 상태의 수주는 처리계획을 변경할 수 없습니다.")
-
-    order_line.fulfillment_mode = payload.fulfillment_mode.value
-    order_line.production_policy = payload.production_policy.value
-    order_line.extra_production_qty = (
-        0
-        if payload.production_policy == OrderLineProductionPolicy.ORDER_ONLY
-        else int(payload.extra_production_qty or 0)
-    )
-    order_line.decision_made = True
-    order_line.decision_made_at = utc_now()
-
-    partner = db.get(Partner, order_line.partner_id)
-    partner_name = partner.name if partner else ""
-
-    planned_production_qty = get_planned_production_qty(db, order_line, partner_name)
-
-    if planned_production_qty <= 0:
-        create_stock_shipment_waiting_if_needed(
-            db,
-            order_line,
-            partner_name,
-        )
-
-    db.flush()
-    db.refresh(order_line)
-    return order_line
-
-
 def confirm_order_line_plan_decision(
     db: Session,
     *,
@@ -359,27 +279,21 @@ def confirm_order_line_plan_decision(
     plan_type = payload.plan_type
     available_inventory_qty = get_available_inventory_qty(db, order_line.product_id)
 
-    is_stock_replenishment = is_stock_replenishment_partner(
-        partner.name,
-        partner.business_no,
-    )
-
-    if is_stock_replenishment:
-        ship_target_qty = 0
-
-        if plan_type != OrderLinePlanType.STOCK_REPLENISHMENT:
+    if plan_type == OrderLinePlanType.STOCK_REPLENISHMENT:
+        if available_inventory_qty <= 0:
             raise HTTPException(
                 status_code=409,
-                detail="재고비축 거래처는 재고비축 생산 처리만 가능합니다.",
+                detail="현재고가 없는 발주는 기존 자동 생산 규칙을 사용합니다.",
             )
 
+        ship_target_qty = 0
         stock_ship_qty = 0
         production_qty = int(order_line.order_qty or 0)
         is_short_close = False
 
         order_line.fulfillment_mode = OrderLineFulfillmentMode.PRODUCTION_FIRST.value
         order_line.production_policy = OrderLineProductionPolicy.ALLOW_STOCK_BUILD.value
-        order_line.extra_production_qty = production_qty
+        order_line.extra_production_qty = 0
 
     else:
         ship_target_qty = get_target_ship_qty(order_line, partner.name)
@@ -409,10 +323,13 @@ def confirm_order_line_plan_decision(
             order_line.extra_production_qty = 0
 
         elif available_inventory_qty >= remaining_ship_qty:
-            if plan_type != OrderLinePlanType.AUTO_STOCK_SHIP:
+            if plan_type not in {
+                OrderLinePlanType.STOCK_SHIP_COMPLETE,
+                OrderLinePlanType.AUTO_STOCK_SHIP,
+            }:
                 raise HTTPException(
                     status_code=409,
-                    detail="현재고가 출고목표수량 이상인 수주는 재고 출고 처리만 가능합니다.",
+                    detail="현재고가 출고목표수량 이상인 수주는 재고 출고완료 또는 재고생산만 선택할 수 있습니다.",
                 )
 
             stock_ship_qty = remaining_ship_qty

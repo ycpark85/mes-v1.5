@@ -20,7 +20,6 @@ from app.schemas.order_line import (
     OrderLineBulkValidateRequest,
     OrderLineBulkValidateResult,
     OrderLineCreate,
-    OrderLineFulfillmentPlanUpdate,
     OrderLineListOut,
     OrderLineOut,
     OrderLinePlanConfirmRequest,
@@ -31,6 +30,7 @@ from app.schemas.order_line import (
 from app.schemas.order_line_detail import OrderLineDetailDto, OrderLineDetailUpdate
 from app.services.bulk.order_line_bulk_service import order_line_bulk_service
 from app.services.order_line_creation_service import (
+    create_primary_lot_for_order_line,
     create_order_line_with_policy as _create_order_line_with_policy,
 )
 from app.services.order_line_base_lot_service import create_base_lot_from_plan
@@ -43,7 +43,6 @@ from app.services.order_line_list_query import list_order_lines_for_grid
 from app.services.order_line_plan_service import (
     confirm_order_line_plan_decision,
     get_latest_plan_history as _get_latest_plan_history,
-    update_order_line_fulfillment_plan_config,
 )
 from app.services.order_line_response_builder import (
     build_order_line_out,
@@ -118,6 +117,13 @@ def confirm_order_line_plan(
             order_line_id=order_line_id,
             payload=payload,
         )
+        if history.plan_type == "STOCK_REPLENISHMENT":
+            create_primary_lot_for_order_line(
+                db,
+                order_line,
+                product,
+                lot_qty=int(order_line.order_qty or 0),
+            )
         db.commit()
         db.refresh(order_line)
     except HTTPException:
@@ -137,30 +143,6 @@ def confirm_order_line_plan(
         partner=partner,
         product=product,
     )
-
-
-@router.patch("/{order_line_id}/fulfillment-plan", response_model=OrderLineOut)
-def update_order_line_fulfillment_plan(
-    order_line_id: int,
-    payload: OrderLineFulfillmentPlanUpdate,
-    db: Session = Depends(get_db),
-):
-    try:
-        obj = update_order_line_fulfillment_plan_config(
-            db,
-            order_line_id=order_line_id,
-            payload=payload,
-        )
-        db.commit()
-        db.refresh(obj)
-    except HTTPException:
-        db.rollback()
-        raise
-    except IntegrityError:
-        db.rollback()
-        raise HTTPException(status_code=409, detail="처리계획 저장 중 무결성 오류가 발생했습니다.")
-
-    return build_order_line_out(db, obj)
 
 
 @router.get("", response_model=OrderLineListOut)

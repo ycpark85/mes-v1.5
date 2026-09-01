@@ -233,6 +233,12 @@ def _to_plan_timeline_message(history: OrderLinePlanHistory) -> str:
             f"{stock_ship_qty:,}개를 재고 출하대기로 생성했습니다."
         )
 
+    if plan_type == "STOCK_SHIP_COMPLETE":
+        return (
+            f"처리계획 확정: 현재고 {available_inventory_qty:,}개 중 "
+            f"{stock_ship_qty:,}개를 즉시 출고완료 처리했습니다."
+        )
+
     if plan_type == "PARTIAL_STOCK_ONLY_CLOSE":
         return (
             f"처리계획 확정: 현재고 {available_inventory_qty:,}개 중 "
@@ -248,8 +254,8 @@ def _to_plan_timeline_message(history: OrderLinePlanHistory) -> str:
 
     if plan_type == "STOCK_REPLENISHMENT":
         return (
-            f"처리계획 확정: 재고비축 목적 발주로 "
-            f"{production_qty:,}개 생산 후 재고로 입고합니다."
+            f"처리계획 확정: 기존 재고를 사용하지 않고 발주수량 "
+            f"{production_qty:,}개 전체를 생산하여 재고로 입고합니다."
         )
 
     return "처리계획이 확정되었습니다."
