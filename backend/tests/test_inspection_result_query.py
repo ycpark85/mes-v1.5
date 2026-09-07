@@ -130,10 +130,63 @@ class InspectionResultQueryTests(unittest.TestCase):
         self.assertEqual(102, detail.inventory.ship_target_qty)
         self.assertEqual(10, detail.inventory.already_shipped_qty)
         self.assertEqual(92, detail.inventory.remaining_ship_target_qty)
+        self.assertEqual(10, detail.inventory.prior_shipped_qty)
+        self.assertEqual(0, detail.inventory.current_result_shipped_qty)
+        self.assertEqual(
+            92,
+            detail.inventory.remaining_before_current_result_qty,
+        )
         self.assertEqual(6, detail.inventory.current_result_stock_ship_qty)
         self.assertEqual(20, detail.inventory.current_result_result_ship_qty)
-        self.assertEqual(62, detail.inventory.current_result_stock_in_qty)
+        self.assertEqual(40, detail.inventory.current_result_stock_in_qty)
         self.assertEqual(3, detail.inventory.current_result_discard_qty)
+        self.assertEqual(35, detail.inventory.prior_unsettled_sellable_qty)
+
+    def test_saved_result_shipment_is_not_counted_twice_in_preview_baseline(self) -> None:
+        order_line = self.db.get(OrderLine, 1)
+        order_line.order_qty = 40_000
+        shipment = self.db.get(ShipmentLine, 2)
+        shipment.status = "DONE"
+        shipment.ship_qty = 12_000
+        shipment.shipped_qty = 12_000
+        self.db.add(
+            ProductInventoryMovement(
+                inventory_movement_id=3,
+                product_id=1,
+                product_inventory_lot_id=2,
+                stock_lot_no="LOT-A",
+                movement_type="SHIP_OUT",
+                qty=-12_000,
+                balance_after=0,
+                source_type="SHIPMENT_LINE",
+                source_id=2,
+                order_line_id=1,
+                inspection_schedule_id=2,
+                inspection_result_id=2,
+            )
+        )
+        self.db.commit()
+
+        detail = get_inspection_result_detail(self.db, 2)
+
+        self.assertEqual(40_800, detail.inventory.ship_target_qty)
+        self.assertEqual(12_010, detail.inventory.already_shipped_qty)
+        self.assertEqual(10, detail.inventory.prior_shipped_qty)
+        self.assertEqual(12_000, detail.inventory.current_result_shipped_qty)
+        self.assertEqual(
+            40_790,
+            detail.inventory.remaining_before_current_result_qty,
+        )
+        self.assertEqual(28_790, detail.inventory.remaining_ship_target_qty)
+
+    def test_historical_round_accumulation_does_not_include_later_rounds(self) -> None:
+        detail = get_inspection_result_detail(self.db, 1)
+
+        self.assertEqual(0, detail.accumulated.good_qty)
+        self.assertEqual(0, detail.accumulated.defect_ship_qty)
+        self.assertEqual(0, detail.accumulated.defect_qty)
+        self.assertEqual(0, detail.accumulated.inspected_qty)
+        self.assertEqual(0, detail.inventory.prior_unsettled_sellable_qty)
 
     def _seed_inspection_results(self) -> None:
         now = datetime(2026, 7, 10, 9, 30)

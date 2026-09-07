@@ -37,6 +37,11 @@ class InspectionResult(Base):
             "inspected_qty = good_qty + defect_ship_qty + defect_qty",
             name="ck_inspection_result__inspected_qty_calc_v2",
         ),
+        CheckConstraint(
+            "(settled_at IS NULL AND settled_by IS NULL) OR "
+            "(settled_at IS NOT NULL AND settled_by IS NOT NULL)",
+            name="ck_inspection_result__settlement_pair",
+        ),
         Index("ix_inspection_result__schedule", "inspection_schedule_id"),
     )
 
@@ -63,6 +68,11 @@ class InspectionResult(Base):
     memo: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     created_by: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    settled_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    settled_by: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()

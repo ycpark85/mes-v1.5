@@ -16,6 +16,20 @@
 - Migration `29d3e4f5a6b7` aligns plan-history lookup and active outsource-instruction uniqueness indexes.
 - Apply index replacement migrations in the V2 deployment maintenance window because normal PostgreSQL index creation briefly locks writes on the affected table.
 
+## Split Inspection Settlement
+
+- Every inspection round settles its sellable quantity immediately, including a split inspection round.
+- The operator allocates the round's sellable quantity to production shipment, inventory stock-in, and disposal; their sum must equal the current sellable quantity plus any explicitly shown legacy unsettled carry-in.
+- Existing-stock shipment is independent from the inspected production quantity and may be combined with production shipment without exceeding the order's remaining shipment target.
+- Inspection result detail separates LOT inspection totals from order shipment progress. Shipment progress is displayed as target quantity, shipment completed before the selected result, selected-round shipment, cumulative shipment, and remaining shipment.
+- Shipment movements are the source of truth. The selected result's shipment is excluded from the prior-shipment baseline and added exactly once, so `remaining shipment = target - prior shipment - selected-round shipment`.
+- The LOT section is labeled `LOT 누적 처리현황`. `누적 검사완료 수량` is the inspected total, `누적 미검수 처리수량` is the quantity explicitly processed without inspection, and `누적 처리수량 (미검수 포함)` is their sum. Pending inspection quantities are excluded. The same total is labeled `이번 처리수량` for the selected round and `처리수량` in round history; the API field remains `received_qty`.
+- A split round changes the completed schedule to `PARTIAL_DONE`, creates the next schedule as `RECEIVED`, and keeps unused stock reservations available for the later round.
+- Completing the customer shipment target does not complete the LOT while inspection work remains. The order line becomes `DONE` only after all active LOTs are done and recorded shipment movements meet the partner-specific shipment target.
+- `inspection_result.settled_at` and `settled_by` identify rounds whose shipment, stock-in, and disposal settlement has been applied.
+- Migration `4f5a6b7c8d9e` marks historical completed results and zero-sellable results as settled. Positive historical split results remain explicit carry-in and are marked settled in the same transaction as the next saved settlement.
+- A split round cannot contain uninspected quantity. The final round must make cumulative inspected plus uninspected quantity exactly equal the LOT quantity.
+
 ## Authentication Session Revocation
 
 - Account deactivation is checked on every authenticated request and immediately blocks the account.

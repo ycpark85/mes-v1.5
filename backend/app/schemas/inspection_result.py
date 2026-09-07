@@ -89,6 +89,8 @@ class InspectionResultOut(BaseModel):
     partial_reason: Optional[str] = None
     memo: Optional[str] = None
     created_by: Optional[str] = None
+    settled_at: Optional[datetime] = None
+    settled_by: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 
@@ -118,6 +120,10 @@ class InspectionInventorySummaryOut(BaseModel):
     ship_target_qty: int = 0
     already_shipped_qty: int = 0
     remaining_ship_target_qty: int = 0
+    prior_shipped_qty: int = 0
+    current_result_shipped_qty: int = 0
+    remaining_before_current_result_qty: int = 0
+    prior_unsettled_sellable_qty: int = 0
 
     current_result_stock_ship_qty: int = 0
     current_result_result_ship_qty: int = 0

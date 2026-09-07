@@ -105,18 +105,18 @@ class InspectionResultServiceTests(unittest.TestCase):
         self.db.close()
         self.engine.dispose()
 
-    def test_partial_result_creates_next_received_schedule_without_inventory_settlement(self) -> None:
+    def test_partial_result_settles_inventory_and_shipment_immediately(self) -> None:
         result, schedule_status, created_next_id = upsert_inspection_result(
             self.db,
             1,
             good_qty=10,
             defect_ship_qty=2,
             defect_qty=1,
-            uninspected_qty=99,
-            stock_ship_qty=4,
+            uninspected_qty=0,
+            stock_ship_qty=0,
             result_ship_qty=5,
             stock_in_qty=6,
-            discard_qty=7,
+            discard_qty=1,
             is_partial=True,
             next_inspection_date=date(2026, 7, 11),
             partial_reason="partial",
@@ -136,8 +136,17 @@ class InspectionResultServiceTests(unittest.TestCase):
         self.assertEqual("RECEIVED", next_schedule.status)
         self.assertEqual(date(2026, 7, 11), next_schedule.inspection_date)
         self.assertEqual(0, result.uninspected_qty)
-        self.assertEqual(0, len(movements))
-        self.assertEqual(0, len(shipments))
+        self.assertIsNotNone(result.settled_at)
+        self.assertEqual("tester", result.settled_by)
+        self.assertEqual(
+            ["INSPECTION_IN", "SHIP_OUT"],
+            [movement.movement_type for movement in movements],
+        )
+        self.assertEqual([11, -5], [movement.qty for movement in movements])
+        self.assertEqual(1, len(shipments))
+        self.assertEqual("INSPECTION_RESULT", shipments[0].source_type)
+        self.assertEqual("DONE", shipments[0].status)
+        self.assertEqual(5, shipments[0].shipped_qty)
 
     def test_partial_result_requires_non_blank_reason(self) -> None:
         with self.assertRaises(HTTPException) as raised:
@@ -166,7 +175,106 @@ class InspectionResultServiceTests(unittest.TestCase):
             raised.exception.detail,
         )
 
-    def test_final_result_after_partial_completes_lot_and_order_line(self) -> None:
+    def test_partial_result_preserves_unused_reserved_stock_quantity(self) -> None:
+        self._add_stock_for_done_settlement()
+
+        upsert_inspection_result(
+            self.db,
+            1,
+            good_qty=10,
+            defect_ship_qty=0,
+            defect_qty=0,
+            uninspected_qty=0,
+            stock_ship_qty=4,
+            result_ship_qty=0,
+            stock_in_qty=10,
+            discard_qty=0,
+            is_partial=True,
+            next_inspection_date=date(2026, 7, 11),
+            partial_reason="reserved stock split",
+            memo=None,
+            defects=[],
+            actor="tester",
+        )
+        self.db.commit()
+
+        shipment_lines = (
+            self.db.execute(
+                select(ShipmentLine).order_by(ShipmentLine.shipment_line_id.asc())
+            )
+            .scalars()
+            .all()
+        )
+        self.assertEqual(["DONE", "WAITING"], [line.status for line in shipment_lines])
+        self.assertEqual([4, 2], [line.ship_qty for line in shipment_lines])
+        self.assertEqual([4, 0], [line.shipped_qty for line in shipment_lines])
+        self.assertIsNotNone(shipment_lines[0].inspection_result_id)
+        self.assertIsNone(shipment_lines[1].inspection_result_id)
+
+    def test_legacy_unsettled_partial_quantity_is_carried_once(self) -> None:
+        first_schedule = self.db.get(InspectionSchedule, 1)
+        first_schedule.status = "PARTIAL_DONE"
+        first_schedule.finished_at = datetime(2026, 7, 10, 10, 0)
+        prior_result = InspectionResult(
+            inspection_result_id=1,
+            inspection_schedule_id=1,
+            good_qty=10,
+            defect_ship_qty=2,
+            defect_qty=1,
+            inspected_qty=13,
+            uninspected_qty=0,
+            discard_qty=0,
+            is_partial=True,
+            next_inspection_date=date(2026, 7, 11),
+            partial_reason="legacy partial",
+            created_by="legacy",
+        )
+        next_schedule = InspectionSchedule(
+            inspection_schedule_id=2,
+            lot_id=1,
+            inspection_date=date(2026, 7, 11),
+            status="IN_PROGRESS",
+        )
+        self.db.add_all([prior_result, next_schedule])
+        self.db.commit()
+
+        current_result, schedule_status, _ = upsert_inspection_result(
+            self.db,
+            2,
+            good_qty=40,
+            defect_ship_qty=10,
+            defect_qty=4,
+            uninspected_qty=13,
+            stock_ship_qty=0,
+            result_ship_qty=20,
+            stock_in_qty=39,
+            discard_qty=3,
+            is_partial=False,
+            next_inspection_date=None,
+            partial_reason=None,
+            memo="legacy reconciliation",
+            defects=[],
+            actor="tester",
+        )
+        self.db.commit()
+
+        movements = (
+            self.db.execute(
+                select(ProductInventoryMovement).order_by(
+                    ProductInventoryMovement.inventory_movement_id.asc()
+                )
+            )
+            .scalars()
+            .all()
+        )
+        self.assertEqual("DONE", schedule_status)
+        self.assertIsNotNone(prior_result.settled_at)
+        self.assertEqual("tester", prior_result.settled_by)
+        self.assertIsNotNone(current_result.settled_at)
+        self.assertEqual([59, -20], [movement.qty for movement in movements])
+        self.assertEqual(39, self.db.get(ProductInventory, 1).current_qty)
+
+    def test_final_result_after_partial_completes_lot_but_not_under_shipped_order(self) -> None:
         self._add_stock_for_done_settlement()
 
         _, _, created_next_id = upsert_inspection_result(
@@ -177,7 +285,7 @@ class InspectionResultServiceTests(unittest.TestCase):
             defect_qty=1,
             uninspected_qty=0,
             stock_ship_qty=0,
-            result_ship_qty=0,
+            result_ship_qty=12,
             stock_in_qty=0,
             discard_qty=0,
             is_partial=True,
@@ -198,10 +306,10 @@ class InspectionResultServiceTests(unittest.TestCase):
             good_qty=40,
             defect_ship_qty=10,
             defect_qty=4,
-            uninspected_qty=1,
+            uninspected_qty=13,
             stock_ship_qty=6,
             result_ship_qty=20,
-            stock_in_qty=39,
+            stock_in_qty=27,
             discard_qty=3,
             is_partial=False,
             next_inspection_date=None,
@@ -221,7 +329,75 @@ class InspectionResultServiceTests(unittest.TestCase):
         self.assertEqual("PARTIAL_DONE", first_schedule.status)
         self.assertEqual("DONE", next_schedule.status)
         self.assertEqual("DONE", lot.status)
-        self.assertEqual("DONE", order_line.status)
+        self.assertEqual("CLOSED", order_line.status)
+
+    def test_split_shipment_can_finish_order_before_lot_inspection_finishes(self) -> None:
+        order_line = self.db.get(OrderLine, 1)
+        order_line.order_qty = 50
+        self.db.get(Partner, 1).name = "\ub374\ud2f0\uc6c0"
+        self.db.flush()
+
+        first_result, schedule_status, created_next_id = upsert_inspection_result(
+            self.db,
+            1,
+            good_qty=50,
+            defect_ship_qty=0,
+            defect_qty=0,
+            uninspected_qty=0,
+            stock_ship_qty=0,
+            result_ship_qty=50,
+            stock_in_qty=0,
+            discard_qty=0,
+            is_partial=True,
+            next_inspection_date=date(2026, 7, 11),
+            partial_reason="잔여 30개 후속 검수",
+            memo="주문수량 우선 분할 출고",
+            defects=[],
+            actor="tester",
+        )
+        self.db.commit()
+
+        first_schedule = self.db.get(InspectionSchedule, 1)
+        lot = self.db.get(Lot, 1)
+        order_line = self.db.get(OrderLine, 1)
+        first_shipment = self.db.execute(select(ShipmentLine)).scalar_one()
+
+        self.assertEqual("PARTIAL_DONE", schedule_status)
+        self.assertEqual("PARTIAL_DONE", first_schedule.status)
+        self.assertEqual("RECEIVED", lot.status)
+        self.assertEqual("CLOSED", order_line.status)
+        self.assertEqual(50, first_shipment.shipped_qty)
+        self.assertIsNotNone(first_result.settled_at)
+
+        next_schedule = self.db.get(InspectionSchedule, created_next_id)
+        next_schedule.status = "IN_PROGRESS"
+        self.db.flush()
+
+        _, final_status, _ = upsert_inspection_result(
+            self.db,
+            created_next_id,
+            good_qty=30,
+            defect_ship_qty=0,
+            defect_qty=0,
+            uninspected_qty=0,
+            stock_ship_qty=0,
+            result_ship_qty=0,
+            stock_in_qty=30,
+            discard_qty=0,
+            is_partial=False,
+            next_inspection_date=None,
+            partial_reason=None,
+            memo="잔여수량 최종검수",
+            defects=[],
+            actor="tester",
+        )
+        self.db.commit()
+
+        inventory = self.db.get(ProductInventory, 1)
+        self.assertEqual("DONE", final_status)
+        self.assertEqual("DONE", self.db.get(Lot, 1).status)
+        self.assertEqual("DONE", self.db.get(OrderLine, 1).status)
+        self.assertEqual(30, inventory.current_qty)
 
     def test_done_result_applies_inventory_in_stock_ship_and_result_ship(self) -> None:
         self._add_stock_for_done_settlement()
@@ -232,7 +408,7 @@ class InspectionResultServiceTests(unittest.TestCase):
             good_qty=40,
             defect_ship_qty=10,
             defect_qty=4,
-            uninspected_qty=1,
+            uninspected_qty=26,
             stock_ship_qty=6,
             result_ship_qty=20,
             stock_in_qty=27,
@@ -277,8 +453,8 @@ class InspectionResultServiceTests(unittest.TestCase):
         self.assertEqual(41, inventory.current_qty)
         self.assertEqual(6, stock_lot.current_qty)
         self.assertEqual(27, result_lot.current_qty)
-        self.assertEqual(["INSPECTION_IN", "SHIP_OUT", "SHIP_OUT"], [movement.movement_type for movement in movements])
-        self.assertEqual([47, -6, -20], [movement.qty for movement in movements])
+        self.assertEqual(["SHIP_OUT", "INSPECTION_IN", "SHIP_OUT"], [movement.movement_type for movement in movements])
+        self.assertEqual([-6, 47, -20], [movement.qty for movement in movements])
         self.assertEqual(["STOCK", "INSPECTION_RESULT"], [shipment.source_type for shipment in shipments])
         self.assertEqual(["DONE", "DONE"], [shipment.status for shipment in shipments])
         self.assertEqual([6, 20], [shipment.ship_qty for shipment in shipments])
@@ -316,7 +492,7 @@ class InspectionResultServiceTests(unittest.TestCase):
             good_qty=40,
             defect_ship_qty=10,
             defect_qty=4,
-            uninspected_qty=1,
+            uninspected_qty=26,
             stock_ship_qty=6,
             result_ship_qty=20,
             stock_in_qty=27,
@@ -337,7 +513,7 @@ class InspectionResultServiceTests(unittest.TestCase):
                 good_qty=40,
                 defect_ship_qty=10,
                 defect_qty=4,
-                uninspected_qty=1,
+                uninspected_qty=26,
                 stock_ship_qty=6,
                 result_ship_qty=20,
                 stock_in_qty=27,
@@ -352,6 +528,48 @@ class InspectionResultServiceTests(unittest.TestCase):
             )
 
         self.assertEqual(409, ctx.exception.status_code)
+
+    def test_done_result_update_rebuilds_settlement_without_duplication(self) -> None:
+        self._add_stock_for_done_settlement()
+        for memo in ("first save", "approved correction"):
+            upsert_inspection_result(
+                self.db,
+                1,
+                good_qty=40,
+                defect_ship_qty=10,
+                defect_qty=4,
+                uninspected_qty=26,
+                stock_ship_qty=6,
+                result_ship_qty=20,
+                stock_in_qty=27,
+                discard_qty=3,
+                is_partial=False,
+                next_inspection_date=None,
+                partial_reason=None,
+                memo=memo,
+                defects=[],
+                actor="tester",
+            )
+            self.db.commit()
+
+        inventory = self.db.get(ProductInventory, 1)
+        movements = self.db.execute(select(ProductInventoryMovement)).scalars().all()
+        shipments = self.db.execute(select(ShipmentLine)).scalars().all()
+        inventory_lots = (
+            self.db.execute(
+                select(ProductInventoryLot).order_by(
+                    ProductInventoryLot.product_inventory_lot_id.asc()
+                )
+            )
+            .scalars()
+            .all()
+        )
+
+        self.assertEqual(41, inventory.current_qty)
+        self.assertEqual([6, 27], [lot.current_qty for lot in inventory_lots])
+        self.assertEqual(3, len(movements))
+        self.assertEqual(2, len(shipments))
+        self.assertEqual([6, 20], [line.shipped_qty for line in shipments])
 
     def _seed_base_data(self) -> None:
         self.db.add_all(

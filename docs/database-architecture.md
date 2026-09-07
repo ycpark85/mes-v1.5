@@ -271,6 +271,10 @@ The inspection result stores `uninspected_qty` separately from inspected quality
 - `uninspected_qty` is `NOT NULL`, defaults existing rows to `0`, and is constrained to be non-negative.
 - Official internal received quantity is calculated by the application as `inspected_qty + uninspected_qty`.
 - `discard_qty` remains the shipment/inventory settlement disposal quantity and is not reused for uninspected disposal statistics.
+- `settled_at` and `settled_by` are a nullable pair. Both are `NULL` only while a historical split result is waiting for explicit settlement carry-in; otherwise both are populated.
+- The database check constraint `ck_inspection_result__settlement_pair` prevents a partial settlement marker from being stored.
+- Each newly saved split or final inspection round is settled immediately in the same transaction as its inventory movements and shipment lines.
+- Positive historical split rows left unsettled by migration are locked and carried into the next settlement exactly once.
 
 ## Existing Outsource Work Group Extension
 

@@ -70,11 +70,17 @@ namespace Mes.Wpf.Modules.InspectionSchedules.Dtos
         [JsonPropertyName("ship_target_qty")]
         public int ShipTargetQty { get; set; }
 
-        [JsonPropertyName("already_shipped_qty")]
-        public int AlreadyShippedQty { get; set; }
+        [JsonPropertyName("prior_shipped_qty")]
+        public int PriorShippedQty { get; set; }
 
-        [JsonPropertyName("remaining_ship_target_qty")]
-        public int RemainingShipTargetQty { get; set; }
+        [JsonPropertyName("current_result_shipped_qty")]
+        public int CurrentResultShippedQty { get; set; }
+
+        [JsonPropertyName("remaining_before_current_result_qty")]
+        public int RemainingBeforeCurrentResultQty { get; set; }
+
+        [JsonPropertyName("prior_unsettled_sellable_qty")]
+        public int PriorUnsettledSellableQty { get; set; }
 
         [JsonPropertyName("current_result_stock_ship_qty")]
         public int CurrentResultStockShipQty { get; set; }
@@ -129,6 +135,12 @@ namespace Mes.Wpf.Modules.InspectionSchedules.Dtos
 
         [JsonPropertyName("updated_at")]
         public DateTimeOffset UpdatedAt { get; set; }
+
+        [JsonPropertyName("settled_at")]
+        public DateTimeOffset? SettledAt { get; set; }
+
+        [JsonPropertyName("settled_by")]
+        public string? SettledBy { get; set; }
 
         [JsonPropertyName("defects")]
         public ObservableCollection<InspectionResultDefectDto> Defects { get; set; } = new();

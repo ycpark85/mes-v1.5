@@ -72,11 +72,12 @@
   <text class="text" x="60" y="352">current_process, progress_rate</text>
   <text class="text" x="60" y="374">due_date, display snapshots</text>
 
-  <rect class="box" x="40" y="560" width="310" height="100"/>
+  <rect class="box" x="40" y="560" width="310" height="130"/>
   <text class="title" x="60" y="590">inspection_result</text>
   <text class="text" x="60" y="618">inspected_qty = good + defect_ship + defect</text>
   <text class="text" x="60" y="640">uninspected_qty, discard_qty</text>
   <text class="text" x="60" y="662">received_qty = inspected + uninspected</text>
+  <text class="text" x="60" y="684">settled_at, settled_by (nullable pair)</text>
 
   <rect class="box" x="430" y="540" width="230" height="105"/>
   <text class="title" x="450" y="570">inspection_schedule</text>

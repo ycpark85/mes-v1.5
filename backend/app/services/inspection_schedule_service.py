@@ -12,6 +12,8 @@ from app.core.time import korea_today, utc_now
 from app.models.inspection_schedule import InspectionSchedule
 from app.models.lot import Lot
 from app.models.order_line import OrderLine
+from app.models.partner import Partner
+from app.models.product_inventory_movement import ProductInventoryMovement
 from app.models.outsource_purchase_order_item import OutsourcePurchaseOrderItem
 from app.models.outsource_work_group import OutsourceWorkGroup
 from app.models.outsource_work_group_item import OutsourceWorkGroupItem
@@ -25,6 +27,7 @@ from app.schemas.inspection_schedule import (
 from app.services.lot_status import derive_lot_status_from_inspection_statuses
 from app.services.production_daily_query import refresh_order_line_snapshots_for_lots
 from app.services.routing_policy import is_inspection_only_template_name
+from app.services.ship_qty_policy import calculate_ship_qty
 
 
 inspection_logger = logging.getLogger("mes.inspection")
@@ -517,6 +520,7 @@ def sync_lot_status_from_inspection_schedules(
         return
 
     lot.status = next_status
+    db.flush()
 
     if next_status == "DONE":
         _sync_order_line_status_from_lot(db, lot=lot)
@@ -679,7 +683,24 @@ def _sync_order_line_status_from_lot(db: Session, *, lot: Lot) -> None:
         return
 
     order_line = db.get(OrderLine, lot.order_line_id)
-    if order_line and order_line.status != "CANCELED":
+    if order_line is None or order_line.status == "CANCELED":
+        return
+
+    partner = db.get(Partner, order_line.partner_id)
+    ship_target_qty = int(
+        calculate_ship_qty(partner.name if partner else "", int(order_line.order_qty or 0))
+        or 0
+    )
+    shipped_qty = int(
+        db.execute(
+            select(func.coalesce(func.sum(-ProductInventoryMovement.qty), 0)).where(
+                ProductInventoryMovement.order_line_id == order_line.order_line_id,
+                ProductInventoryMovement.movement_type == "SHIP_OUT",
+            )
+        ).scalar_one()
+        or 0
+    )
+    if shipped_qty >= ship_target_qty:
         order_line.status = "DONE"
 
 

@@ -1,5 +1,6 @@
 import math
 import re
+from dataclasses import dataclass
 
 
 DIRECT_SHIP_KEYWORDS = (
@@ -13,6 +14,16 @@ CAREGEN_KEYWORD = "케어젠"
 
 STOCK_REPLENISHMENT_PARTNER_NAME = "세미산업"
 STOCK_REPLENISHMENT_BUSINESS_NO = "1390178012"
+
+
+@dataclass(frozen=True)
+class ShipmentProgress:
+    ship_target_qty: int
+    prior_shipped_qty: int
+    current_result_shipped_qty: int
+    total_shipped_qty: int
+    remaining_before_current_result_qty: int
+    remaining_after_current_result_qty: int
 
 
 def normalize_partner_name(name: str) -> str:
@@ -58,3 +69,27 @@ def calculate_ship_qty(partner_name: str, order_qty: int) -> int:
         return order_qty + 100
 
     return math.ceil(order_qty * 1.02)
+
+
+def build_shipment_progress(
+    *,
+    ship_target_qty: int,
+    total_shipped_qty: int,
+    current_result_shipped_qty: int,
+) -> ShipmentProgress:
+    target_qty = max(int(ship_target_qty or 0), 0)
+    total_qty = max(int(total_shipped_qty or 0), 0)
+    current_qty = min(
+        max(int(current_result_shipped_qty or 0), 0),
+        total_qty,
+    )
+    prior_qty = total_qty - current_qty
+
+    return ShipmentProgress(
+        ship_target_qty=target_qty,
+        prior_shipped_qty=prior_qty,
+        current_result_shipped_qty=current_qty,
+        total_shipped_qty=total_qty,
+        remaining_before_current_result_qty=max(target_qty - prior_qty, 0),
+        remaining_after_current_result_qty=max(target_qty - total_qty, 0),
+    )

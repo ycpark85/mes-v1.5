@@ -4,7 +4,7 @@ from datetime import date, datetime
 from typing import Optional, Sequence
 
 from fastapi import HTTPException
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -16,8 +16,8 @@ from app.models.inspection_result import InspectionResult
 from app.models.inspection_schedule import InspectionSchedule
 from app.models.lot import Lot
 from app.models.order_line import OrderLine
+from app.models.partner import Partner
 from app.schemas.inspection_result import DefectLineIn
-from sqlalchemy import func
 from app.models.product_inventory import ProductInventory
 from app.models.product_inventory_lot import ProductInventoryLot
 from app.models.product_inventory_movement import ProductInventoryMovement
@@ -34,6 +34,7 @@ from app.services.inspection_quantity_policy import (
     InspectionQuantityError,
     build_inspection_quantity_plan,
 )
+from app.services.ship_qty_policy import build_shipment_progress, calculate_ship_qty
 
 
 def _utcnow() -> datetime:
@@ -52,42 +53,106 @@ def _timestamps_match(current: datetime, expected: datetime) -> bool:
     )
 
 
-def _get_prior_result_totals(
+def _get_prior_unsettled_results(
     db: Session,
     *,
     lot_id: int,
     current_schedule_id: int,
-) -> tuple[int, int, int, int, int, int]:
-    row = db.execute(
-        select(
-            func.coalesce(func.sum(InspectionResult.good_qty), 0),
-            func.coalesce(func.sum(InspectionResult.defect_ship_qty), 0),
-            func.coalesce(func.sum(InspectionResult.defect_qty), 0),
-            func.coalesce(func.sum(InspectionResult.inspected_qty), 0),
-            func.coalesce(func.sum(InspectionResult.uninspected_qty), 0),
-            func.coalesce(func.sum(InspectionResult.discard_qty), 0),
+) -> list[InspectionResult]:
+    return (
+        db.execute(
+            select(InspectionResult)
+            .join(
+                InspectionSchedule,
+                InspectionSchedule.inspection_schedule_id
+                == InspectionResult.inspection_schedule_id,
+            )
+            .where(
+                InspectionSchedule.lot_id == lot_id,
+                InspectionSchedule.inspection_schedule_id != current_schedule_id,
+                InspectionSchedule.status == "PARTIAL_DONE",
+                InspectionResult.settled_at.is_(None),
+            )
+            .order_by(
+                InspectionSchedule.inspection_date.asc(),
+                InspectionSchedule.inspection_schedule_id.asc(),
+            )
+            .with_for_update()
         )
-        .select_from(InspectionResult)
+        .scalars()
+        .all()
+    )
+
+
+def _validate_lot_received_quantity(
+    db: Session,
+    *,
+    schedule: InspectionSchedule,
+    current_result_id: int | None,
+    current_received_qty: int,
+    is_partial: bool,
+) -> None:
+    lot = (
+        db.execute(
+            select(Lot)
+            .where(Lot.lot_id == schedule.lot_id)
+            .with_for_update()
+        )
+        .scalar_one_or_none()
+    )
+    if lot is None:
+        raise HTTPException(status_code=404, detail="lot not found")
+
+    prior_query = (
+        select(
+            func.coalesce(
+                func.sum(
+                    InspectionResult.inspected_qty
+                    + InspectionResult.uninspected_qty
+                ),
+                0,
+            )
+        )
         .join(
             InspectionSchedule,
             InspectionSchedule.inspection_schedule_id
             == InspectionResult.inspection_schedule_id,
         )
         .where(
-            InspectionSchedule.lot_id == lot_id,
-            InspectionSchedule.inspection_schedule_id != current_schedule_id,
+            InspectionSchedule.lot_id == schedule.lot_id,
             InspectionSchedule.status.in_(("PARTIAL_DONE", "DONE")),
         )
-    ).one()
-
-    return (
-        int(row[0] or 0),
-        int(row[1] or 0),
-        int(row[2] or 0),
-        int(row[3] or 0),
-        int(row[4] or 0),
-        int(row[5] or 0),
     )
+    if current_result_id is not None:
+        prior_query = prior_query.where(
+            InspectionResult.inspection_result_id != current_result_id
+        )
+
+    prior_received_qty = int(db.execute(prior_query).scalar_one() or 0)
+    accumulated_received_qty = prior_received_qty + current_received_qty
+    lot_qty = int(lot.lot_qty or 0)
+
+    if accumulated_received_qty > lot_qty:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "누적 검수·미검수 수량이 LOT 수량을 초과할 수 없습니다. "
+                f"LOT 수량: {lot_qty}, 누적 입력: {accumulated_received_qty}"
+            ),
+        )
+    if is_partial and accumulated_received_qty >= lot_qty:
+        raise HTTPException(
+            status_code=422,
+            detail="분할검수는 LOT 잔여수량이 있을 때만 저장할 수 있습니다.",
+        )
+    if not is_partial and accumulated_received_qty != lot_qty:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "최종검수의 누적 검수·미검수 수량은 LOT 수량과 같아야 합니다. "
+                f"LOT 수량: {lot_qty}, 누적 입력: {accumulated_received_qty}"
+            ),
+        )
 
 
 
@@ -114,11 +179,11 @@ def upsert_inspection_result(
     expected_updated_at: Optional[datetime] = None,
 ) -> tuple[InspectionResult, str, Optional[int]]:
     """
-    - schedule.status == IN_PROGRESS 에서만 허용
+    - 신규 저장은 IN_PROGRESS, 기존 최종 실적 수정은 DONE에서 허용
     - inspected_qty = good_qty + defect_ship_qty + defect_qty (서버 계산)
     - sellable_qty = good_qty + defect_ship_qty
-    - is_partial=true: shipment/inventory qty is ignored and kept at 0
-    - is_partial=false: result_ship_qty + stock_in_qty + discard_qty == accumulated sellable_qty
+    - split and final rounds both settle inspected sellable quantity immediately
+    - production shipment + stock-in + disposal equals current sellable qty plus legacy carry-in
     - defects/attachments: 전체 삭제 후 재삽입
     - is_partial=true: schedule=PARTIAL_DONE + next schedule 자동 생성(RECEIVED)
     - is_partial=false: schedule=DONE + 재고/출하 반영
@@ -167,10 +232,14 @@ def upsert_inspection_result(
         next_inspection_date = None
         partial_reason = None
 
-    prior_good_qty, prior_defect_ship_qty, _, _, _, _ = _get_prior_result_totals(
+    prior_unsettled_results = _get_prior_unsettled_results(
         db,
         lot_id=sch.lot_id,
         current_schedule_id=inspection_schedule_id,
+    )
+    prior_unsettled_sellable_qty = sum(
+        int(row.good_qty or 0) + int(row.defect_ship_qty or 0)
+        for row in prior_unsettled_results
     )
     try:
         quantity_plan = build_inspection_quantity_plan(
@@ -183,19 +252,25 @@ def upsert_inspection_result(
             stock_in_qty=stock_in_qty,
             discard_qty=discard_qty,
             uninspected_qty=uninspected_qty,
-            prior_good_qty=prior_good_qty,
-            prior_defect_ship_qty=prior_defect_ship_qty,
+            prior_unsettled_sellable_qty=prior_unsettled_sellable_qty,
         )
     except InspectionQuantityError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     inspected_qty = quantity_plan.inspected_qty
-    sellable_qty = quantity_plan.sellable_qty
     stock_ship_qty = quantity_plan.stock_ship_qty
     result_ship_qty = quantity_plan.result_ship_qty
     stock_in_qty = quantity_plan.stock_in_qty
     discard_qty = quantity_plan.discard_qty
     uninspected_qty = quantity_plan.uninspected_qty
+
+    _validate_lot_received_quantity(
+        db,
+        schedule=sch,
+        current_result_id=result.inspection_result_id if result is not None else None,
+        current_received_qty=inspected_qty + uninspected_qty,
+        is_partial=is_partial,
+    )
 
     if defects:
         defect_type_ids = sorted({d.defect_type_id for d in defects})
@@ -260,26 +335,28 @@ def upsert_inspection_result(
             inspection_date=next_inspection_date,  # type: ignore[arg-type]
             received_at=base_received_at,
         )
-        db.flush()
-        sync_lot_status_from_inspection_schedules(db, lot_id=sch.lot_id)
     else:
         sch.status = "DONE"
         sch.finished_at = now
-        db.flush()
 
-        sync_lot_status_from_inspection_schedules(db, lot_id=sch.lot_id)
+    db.flush()
+    _apply_inventory_for_result(
+        db=db,
+        result=result,
+        schedule=sch,
+        stock_ship_qty=stock_ship_qty,
+        result_ship_qty=result_ship_qty,
+        stock_in_qty=stock_in_qty,
+        settlement_sellable_qty=quantity_plan.settlement_sellable_qty,
+    )
+    result.settled_at = now
+    result.settled_by = actor
+    for prior_result in prior_unsettled_results:
+        prior_result.settled_at = now
+        prior_result.settled_by = actor
 
-        _apply_inventory_for_result(
-            db=db,
-            result=result,
-            schedule=sch,
-            stock_ship_qty=stock_ship_qty,
-            result_ship_qty=result_ship_qty,
-            stock_in_qty=stock_in_qty,
-        )
-        
-        db.flush()
-        
+    db.flush()
+    sync_lot_status_from_inspection_schedules(db, lot_id=sch.lot_id)
 
     refresh_order_line_snapshots_for_lots(db, {sch.lot_id})
     lot = db.get(Lot, sch.lot_id)
@@ -389,7 +466,7 @@ def _get_fifo_stock_lot_allocations(
     db: Session,
     *,
     product_id: int,
-    current_lot_no: str,
+    current_lot_no: str | None,
     inspection_result_id: int,
     stock_ship_qty: int,
 ) -> list[tuple[ProductInventoryLot, int]]:
@@ -441,51 +518,6 @@ def _get_or_create_inventory_lot(
     return inventory_lot
 
 
-def _create_stock_shipment_lines_by_fifo(
-    db: Session,
-    *,
-    order_line: OrderLine,
-    product_id: int,
-    current_lot_no: str,
-    inspection_result_id: int,
-    stock_ship_qty: int,
-) -> None:
-    allocations = _get_fifo_stock_lot_allocations(
-        db,
-        product_id=product_id,
-        current_lot_no=current_lot_no,
-        inspection_result_id=inspection_result_id,
-        stock_ship_qty=stock_ship_qty,
-    )
-
-    for inventory_lot, ship_qty in allocations:
-        stock_lot = (
-            db.execute(
-                select(Lot)
-                .where(
-                    Lot.product_id == product_id,
-                    Lot.lot_no == inventory_lot.lot_no,
-                )
-                .limit(1)
-            )
-            .scalar_one_or_none()
-        )
-        db.add(
-            ShipmentLine(
-                order_line_id=order_line.order_line_id,
-                product_id=product_id,
-                product_inventory_lot_id=inventory_lot.product_inventory_lot_id,
-                stock_lot_no=inventory_lot.lot_no,
-                lot_id=stock_lot.lot_id if stock_lot else None,
-                inspection_result_id=inspection_result_id,
-                source_type="STOCK",
-                status="WAITING",
-                ship_qty=ship_qty,
-                shipped_qty=0,
-                memo="검수 실적 저장 시 기존 재고 출하대기 FIFO LOT 생성",
-            )
-        )
-
 def _add_ship_out_movement(
     db: Session,
     *,
@@ -521,7 +553,7 @@ def _create_completed_stock_shipment_lines_by_fifo(
     schedule: InspectionSchedule,
     inventory: ProductInventory,
     product_id: int,
-    current_lot_no: str,
+    current_lot_no: str | None,
     inspection_result_id: int,
     stock_ship_qty: int,
 ) -> None:
@@ -613,12 +645,14 @@ def _consume_waiting_stock_reservations(
     product_id: int,
     inspection_result_id: int,
     stock_ship_qty: int,
+    release_unused_reservations: bool,
 ) -> int:
     if stock_ship_qty <= 0:
-        _cancel_waiting_stock_reservations_for_order_line(
-            db,
-            order_line_id=order_line.order_line_id,
-        )
+        if release_unused_reservations:
+            _cancel_waiting_stock_reservations_for_order_line(
+                db,
+                order_line_id=order_line.order_line_id,
+            )
         return 0
 
     remaining_qty = stock_ship_qty
@@ -643,12 +677,14 @@ def _consume_waiting_stock_reservations(
 
     for line in waiting_lines:
         if remaining_qty <= 0:
-            line.status = "CANCELED"
-            line.shipped_qty = 0
-            line.memo = f"{line.memo or ''} / 검수 완료 후 미사용 예약 해제".strip()
+            if release_unused_reservations:
+                line.status = "CANCELED"
+                line.shipped_qty = 0
+                line.memo = f"{line.memo or ''} / 검수 완료 후 미사용 예약 해제".strip()
             continue
 
-        ship_qty = min(int(line.ship_qty or 0), remaining_qty)
+        reserved_qty = int(line.ship_qty or 0)
+        ship_qty = min(reserved_qty, remaining_qty)
         if ship_qty <= 0:
             line.status = "CANCELED"
             line.shipped_qty = 0
@@ -713,6 +749,23 @@ def _consume_waiting_stock_reservations(
         line.shipped_qty = ship_qty
         line.shipped_at = shipped_at
         line.memo = f"{line.memo or ''} / 검수 완료 시 예약 재고 출고".strip()
+
+        if not release_unused_reservations and reserved_qty > ship_qty:
+            db.add(
+                ShipmentLine(
+                    order_line_id=line.order_line_id,
+                    product_id=line.product_id,
+                    product_inventory_lot_id=inventory_lot.product_inventory_lot_id,
+                    stock_lot_no=inventory_lot.lot_no,
+                    lot_id=stock_lot.lot_id if stock_lot else None,
+                    inspection_result_id=None,
+                    source_type="STOCK",
+                    status="WAITING",
+                    ship_qty=reserved_qty - ship_qty,
+                    shipped_qty=0,
+                    memo="분할검수 후 잔여 예약재고 유지",
+                )
+            )
 
         _add_ship_out_movement(
             db,
@@ -779,6 +832,7 @@ def _apply_inventory_for_result(
     stock_ship_qty: int,
     result_ship_qty: int,
     stock_in_qty: int,
+    settlement_sellable_qty: int,
 ) -> None:
     lot = db.execute(
         select(Lot)
@@ -858,26 +912,14 @@ def _apply_inventory_for_result(
 
     db.flush()
 
-    current_stock_qty_before_result_in = int(inventory.current_qty or 0)
-    prior_good_qty, prior_defect_ship_qty, _, _, _, _ = _get_prior_result_totals(
-        db,
-        lot_id=schedule.lot_id,
-        current_schedule_id=schedule.inspection_schedule_id,
-    )
-    sellable_qty = (
-        prior_good_qty
-        + prior_defect_ship_qty
-        + int(result.good_qty or 0)
-        + int(result.defect_ship_qty or 0)
-    )
-
     discard_qty = int(result.discard_qty or 0)
-    if result_ship_qty + stock_in_qty + discard_qty != sellable_qty:
+    if result_ship_qty + stock_in_qty + discard_qty != settlement_sellable_qty:
         raise HTTPException(
             status_code=422,
             detail="생산 출고수량 + 재고편입수량 + 폐기수량은 판매가능수량과 같아야 합니다.",
         )
 
+    current_stock_qty_before_result_in = int(inventory.current_qty or 0)
     if stock_ship_qty > current_stock_qty_before_result_in:
         raise HTTPException(
             status_code=422,
@@ -887,8 +929,60 @@ def _apply_inventory_for_result(
             ),
         )
 
-    inventory_in_qty = max(sellable_qty - discard_qty, 0)
+    partner = db.get(Partner, order_line.partner_id)
+    ship_target_qty = int(
+        calculate_ship_qty(partner.name if partner else "", int(order_line.order_qty or 0))
+        or 0
+    )
+    already_shipped_qty = int(
+        db.execute(
+            select(func.coalesce(func.sum(-ProductInventoryMovement.qty), 0)).where(
+                ProductInventoryMovement.order_line_id == order_line.order_line_id,
+                ProductInventoryMovement.movement_type == "SHIP_OUT",
+            )
+        ).scalar_one()
+        or 0
+    )
+    requested_ship_qty = stock_ship_qty + result_ship_qty
+    shipment_progress = build_shipment_progress(
+        ship_target_qty=ship_target_qty,
+        total_shipped_qty=already_shipped_qty + requested_ship_qty,
+        current_result_shipped_qty=requested_ship_qty,
+    )
+    if requested_ship_qty > shipment_progress.remaining_before_current_result_qty:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "이번 회차 출고수량이 발주의 남은 출고수량을 초과할 수 없습니다. "
+                "남은 출고수량: "
+                f"{shipment_progress.remaining_before_current_result_qty}"
+            ),
+        )
 
+    remaining_stock_ship_qty = _consume_waiting_stock_reservations(
+        db,
+        order_line=order_line,
+        schedule=schedule,
+        inventory=inventory,
+        product_id=lot.product_id,
+        inspection_result_id=result.inspection_result_id,
+        stock_ship_qty=stock_ship_qty,
+        release_unused_reservations=not result.is_partial,
+    )
+
+    if remaining_stock_ship_qty > 0:
+        _create_completed_stock_shipment_lines_by_fifo(
+            db,
+            order_line=order_line,
+            schedule=schedule,
+            inventory=inventory,
+            product_id=lot.product_id,
+            current_lot_no=None,
+            inspection_result_id=result.inspection_result_id,
+            stock_ship_qty=remaining_stock_ship_qty,
+        )
+
+    inventory_in_qty = max(settlement_sellable_qty - discard_qty, 0)
     if inventory_in_qty > 0:
         inventory_lot = _get_or_create_inventory_lot(
             db,
@@ -910,30 +1004,8 @@ def _apply_inventory_for_result(
                 order_line_id=order_line.order_line_id,
                 inspection_schedule_id=schedule.inspection_schedule_id,
                 inspection_result_id=result.inspection_result_id,
-                memo="검수 실적 재고 입고",
+                memo="검수 회차 판매가능수량 재고 입고",
             )
-        )
-
-    remaining_stock_ship_qty = _consume_waiting_stock_reservations(
-        db,
-        order_line=order_line,
-        schedule=schedule,
-        inventory=inventory,
-        product_id=lot.product_id,
-        inspection_result_id=result.inspection_result_id,
-        stock_ship_qty=stock_ship_qty,
-    )
-
-    if remaining_stock_ship_qty > 0:
-        _create_completed_stock_shipment_lines_by_fifo(
-            db,
-            order_line=order_line,
-            schedule=schedule,
-            inventory=inventory,
-            product_id=lot.product_id,
-            current_lot_no=lot.lot_no,
-            inspection_result_id=result.inspection_result_id,
-            stock_ship_qty=remaining_stock_ship_qty,
         )
 
     if result_ship_qty > 0:
@@ -952,7 +1024,5 @@ def _apply_inventory_for_result(
             inspection_result_id=result.inspection_result_id,
             result_ship_qty=result_ship_qty,
         )
-
-    order_line.status = "DONE"
 
     db.flush()

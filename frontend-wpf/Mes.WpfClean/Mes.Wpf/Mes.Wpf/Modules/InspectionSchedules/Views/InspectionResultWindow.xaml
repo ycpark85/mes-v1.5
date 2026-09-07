@@ -262,6 +262,8 @@
                             <RowDefinition Height="Auto"/>
                             <RowDefinition Height="8"/>
                             <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="8"/>
+                            <RowDefinition Height="Auto"/>
                         </Grid.RowDefinitions>
 
                         <TextBlock Grid.Row="0"
@@ -291,8 +293,8 @@
                                 <ColumnDefinition Width="125"/>
                                 <ColumnDefinition Width="*"/>
                             </Grid.ColumnDefinitions>
-                            <TextBlock Grid.Column="0" Style="{StaticResource LabelTextStyle}" Text="기출하수량"/>
-                            <TextBlock Grid.Column="1" Style="{StaticResource ValueTextStyle}" Text="{Binding AlreadyShippedQty, StringFormat={}{0:N0}}"/>
+                            <TextBlock Grid.Column="0" Style="{StaticResource LabelTextStyle}" Text="이전 출고완료"/>
+                            <TextBlock Grid.Column="1" Style="{StaticResource ValueTextStyle}" Text="{Binding PriorShippedQty, StringFormat={}{0:N0}}"/>
                         </Grid>
 
                         <Grid Grid.Row="8">
@@ -300,8 +302,8 @@
                                 <ColumnDefinition Width="125"/>
                                 <ColumnDefinition Width="*"/>
                             </Grid.ColumnDefinitions>
-                            <TextBlock Grid.Column="0" Style="{StaticResource LabelTextStyle}" Text="남은출고목표"/>
-                            <TextBlock Grid.Column="1" Style="{StaticResource ValueTextStyle}" Text="{Binding RemainingShipTargetQty, StringFormat={}{0:N0}}"/>
+                            <TextBlock Grid.Column="0" Style="{StaticResource LabelTextStyle}" Text="이번 회차 출고"/>
+                            <TextBlock Grid.Column="1" Style="{StaticResource ValueTextStyle}" Text="{Binding CurrentRoundShipQty, StringFormat={}{0:N0}}"/>
                         </Grid>
 
                         <Grid Grid.Row="10">
@@ -309,10 +311,18 @@
                                 <ColumnDefinition Width="125"/>
                                 <ColumnDefinition Width="*"/>
                             </Grid.ColumnDefinitions>
-                            <TextBlock Grid.Column="0" Style="{StaticResource LabelTextStyle}" Text="출고수량합계"/>
-                            <TextBlock Grid.Column="1" Style="{StaticResource ValueTextStyle}" Text="{Binding ExpectedShipQty, StringFormat={}{0:N0}}"/>
+                            <TextBlock Grid.Column="0" Style="{StaticResource LabelTextStyle}" Text="출고누계"/>
+                            <TextBlock Grid.Column="1" Style="{StaticResource ValueTextStyle}" Text="{Binding TotalShippedQty, StringFormat={}{0:N0}}"/>
                         </Grid>
                         <Grid Grid.Row="12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="125"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Style="{StaticResource LabelTextStyle}" Text="출고잔량"/>
+                            <TextBlock Grid.Column="1" Style="{StaticResource ValueTextStyle}" Text="{Binding RemainingAfterCurrentQty, StringFormat={}{0:N0}}"/>
+                        </Grid>
+                        <Grid Grid.Row="14">
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="8"/>
@@ -438,9 +448,11 @@
                                         <ColumnDefinition Width="120"/>
                                         <ColumnDefinition Width="*"/>
                                     </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" Style="{StaticResource LabelTextStyle}" Text="미검수수량"/>
+                                    <TextBlock Grid.Column="0" Style="{StaticResource LabelTextStyle}" Text="미검수 처리수량"
+                                               ToolTip="검사 없이 미검수로 처리한 수량입니다. 나중에 검수할 대기 물량은 제외합니다."/>
                                     <TextBox Grid.Column="1"
                                              Style="{StaticResource InputTextBoxStyle}"
+                                             IsEnabled="{Binding IsUninspectedInputEnabled}"
                                              IsReadOnly="{Binding IsReadOnlyMode}"
                                              Text="{Binding UninspectedQty, UpdateSourceTrigger=PropertyChanged}"/>
                                 </Grid>
@@ -461,7 +473,8 @@
                                         <ColumnDefinition Width="120"/>
                                         <ColumnDefinition Width="*"/>
                                     </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" Style="{StaticResource LabelTextStyle}" Text="총입고수량"/>
+                                    <TextBlock Grid.Column="0" Style="{StaticResource LabelTextStyle}" Text="이번 처리수량"
+                                               ToolTip="이번 회차 검사완료 수량과 미검수 처리수량의 합계입니다."/>
                                     <TextBlock Grid.Column="1"
                                                Style="{StaticResource ValueTextStyle}"
                                                Text="{Binding ReceivedQty, StringFormat={}{0:N0}}"/>
@@ -488,7 +501,12 @@
                                     <RowDefinition Height="Auto"/>
                                 </Grid.RowDefinitions>
 
-                                <TextBlock Grid.Row="0" FontWeight="SemiBold" Text="출고 / 재고 처리"/>
+                                <DockPanel Grid.Row="0">
+                                    <TextBlock FontWeight="SemiBold" Text="출고 / 재고 처리"/>
+                                    <TextBlock DockPanel.Dock="Right"
+                                               Foreground="#B45309"
+                                               Text="{Binding PriorUnsettledSellableQty, StringFormat=이월 미정산 {0:N0}}"/>
+                                </DockPanel>
 
                                 <Grid Grid.Row="2">
                                     <Grid.ColumnDefinitions>
@@ -545,10 +563,10 @@
                                         <ColumnDefinition Width="150"/>
                                         <ColumnDefinition Width="*"/>
                                     </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" Style="{StaticResource LabelTextStyle}" Text="출고수량합계"/>
+                                    <TextBlock Grid.Column="0" Style="{StaticResource LabelTextStyle}" Text="이번 회차 출고"/>
                                     <TextBlock Grid.Column="1"
                                                Style="{StaticResource ValueTextStyle}"
-                                               Text="{Binding ExpectedShipQty, StringFormat={}{0:N0}}"/>
+                                               Text="{Binding CurrentRoundShipQty, StringFormat={}{0:N0}}"/>
                                 </Grid>
 
                                 <Grid Grid.Row="12">
@@ -564,7 +582,7 @@
                             </Grid>
                         </Border>
 
-                        <!-- 누적 / 부족 -->
+                        <!-- LOT 누적 처리현황 -->
                         <Border Grid.Column="4" Style="{StaticResource SubSectionBorderStyle}">
                             <Grid>
                                 <Grid.RowDefinitions>
@@ -579,16 +597,20 @@
                                     <RowDefinition Height="Auto"/>
                                     <RowDefinition Height="8"/>
                                     <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="8"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="12"/>
+                                    <RowDefinition Height="Auto"/>
                                 </Grid.RowDefinitions>
 
-                                <TextBlock Grid.Row="0" FontWeight="SemiBold" Text="누적 / 부족 정보"/>
+                                <TextBlock Grid.Row="0" FontWeight="SemiBold" Text="LOT 누적 처리현황"/>
 
                                 <Grid Grid.Row="2">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="130"/>
                                         <ColumnDefinition Width="*"/>
                                     </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" Style="{StaticResource LabelTextStyle}" Text="누적양품"/>
+                                    <TextBlock Grid.Column="0" Style="{StaticResource LabelTextStyle}" Text="누적 양품"/>
                                     <TextBlock Grid.Column="1" Style="{StaticResource ValueTextStyle}" Text="{Binding AccumulatedGoodQty, StringFormat={}{0:N0}}"/>
                                 </Grid>
 
@@ -597,8 +619,8 @@
                                         <ColumnDefinition Width="130"/>
                                         <ColumnDefinition Width="*"/>
                                     </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" Style="{StaticResource LabelTextStyle}" Text="누적불량"/>
-                                    <TextBlock Grid.Column="1" Style="{StaticResource ValueTextStyle}" Text="{Binding AccumulatedDefectQty, StringFormat={}{0:N0}}"/>
+                                    <TextBlock Grid.Column="0" Style="{StaticResource LabelTextStyle}" Text="누적 출하가능불량"/>
+                                    <TextBlock Grid.Column="1" Style="{StaticResource ValueTextStyle}" Text="{Binding AccumulatedDefectShipQty, StringFormat={}{0:N0}}"/>
                                 </Grid>
 
                                 <Grid Grid.Row="6">
@@ -606,8 +628,8 @@
                                         <ColumnDefinition Width="130"/>
                                         <ColumnDefinition Width="*"/>
                                     </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" Style="{StaticResource LabelTextStyle}" Text="누적검수"/>
-                                    <TextBlock Grid.Column="1" Style="{StaticResource ValueTextStyle}" Text="{Binding AccumulatedInspectedQty, StringFormat={}{0:N0}}"/>
+                                    <TextBlock Grid.Column="0" Style="{StaticResource LabelTextStyle}" Text="누적 출하불가불량"/>
+                                    <TextBlock Grid.Column="1" Style="{StaticResource ValueTextStyle}" Text="{Binding AccumulatedDefectQty, StringFormat={}{0:N0}}"/>
                                 </Grid>
 
                                 <Grid Grid.Row="8">
@@ -615,8 +637,10 @@
                                         <ColumnDefinition Width="130"/>
                                         <ColumnDefinition Width="*"/>
                                     </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" Style="{StaticResource LabelTextStyle}" Text="누적입고"/>
-                                    <TextBlock Grid.Column="1" Style="{StaticResource ValueTextStyle}" Text="{Binding AccumulatedReceivedQty, StringFormat={}{0:N0}}"/>
+                                    <TextBlock Grid.Column="0" Style="{StaticResource LabelTextStyle}" Text="누적 검사완료 수량"
+                                               TextWrapping="Wrap" Margin="0,0,8,0"
+                                               ToolTip="실제 검사한 양품·출하가능 불량·출하불가 불량의 누적 합계입니다."/>
+                                    <TextBlock Grid.Column="1" Style="{StaticResource ValueTextStyle}" Text="{Binding AccumulatedInspectedQty, StringFormat={}{0:N0}}"/>
                                 </Grid>
 
                                 <Grid Grid.Row="10">
@@ -624,9 +648,24 @@
                                         <ColumnDefinition Width="130"/>
                                         <ColumnDefinition Width="*"/>
                                     </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" Style="{StaticResource LabelTextStyle}" Text="예상부족수량"/>
-                                    <TextBlock Grid.Column="1" Style="{StaticResource ValueTextStyle}" Text="{Binding ShortageQty, StringFormat={}{0:N0}}"/>
+                                    <TextBlock Grid.Column="0" Style="{StaticResource LabelTextStyle}" Text="누적 미검수 처리수량"
+                                               TextWrapping="Wrap" Margin="0,0,8,0"
+                                               ToolTip="검사 없이 미검수로 처리한 누적 수량입니다. 검수 대기 물량은 제외합니다."/>
+                                    <TextBlock Grid.Column="1" Style="{StaticResource ValueTextStyle}" Text="{Binding AccumulatedUninspectedQty, StringFormat={}{0:N0}}"/>
                                 </Grid>
+
+                                <Grid Grid.Row="12">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="130"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Style="{StaticResource LabelTextStyle}" Text="누적 처리수량&#x0a;(미검수 포함)"
+                                               TextWrapping="Wrap" Margin="0,0,8,0"/>
+                                    <TextBlock Grid.Column="1" Style="{StaticResource ValueTextStyle}" Text="{Binding AccumulatedReceivedQty, StringFormat={}{0:N0}}"/>
+                                </Grid>
+
+                                <TextBlock Grid.Row="14" FontSize="11" Foreground="#475569" TextWrapping="Wrap"
+                                           Text="검사완료 + 미검수 처리 = 누적 처리수량&#x0a;검수 대기 중인 물량은 제외됩니다."/>
                             </Grid>
                         </Border>
                     </Grid>
@@ -980,7 +1019,7 @@
                                     <DataGridTextColumn Header="양품" Width="80" Binding="{Binding GoodQty, StringFormat={}{0:N0}}" ElementStyle="{StaticResource GridTextStyle}"/>
                                     <DataGridTextColumn Header="불량출고" Width="90" Binding="{Binding DefectShipQty, StringFormat={}{0:N0}}" ElementStyle="{StaticResource GridTextStyle}"/>
                                     <DataGridTextColumn Header="불량" Width="80" Binding="{Binding DefectQty, StringFormat={}{0:N0}}" ElementStyle="{StaticResource GridTextStyle}"/>
-                                    <DataGridTextColumn Header="총 입고" Width="90" Binding="{Binding ReceivedQty, StringFormat={}{0:N0}}" ElementStyle="{StaticResource GridTextStyle}"/>
+                                    <DataGridTextColumn Header="처리수량" Width="90" Binding="{Binding ReceivedQty, StringFormat={}{0:N0}}" ElementStyle="{StaticResource GridTextStyle}"/>
                                     <DataGridTextColumn Header="다음 검수일" Width="105" Binding="{Binding NextInspectionDate, StringFormat=yyyy-MM-dd}" ElementStyle="{StaticResource GridTextStyle}"/>
                                     <DataGridTextColumn Header="분할사유" Width="*" Binding="{Binding PartialReason}" ElementStyle="{StaticResource GridTextStyle}"/>
                                 </DataGrid.Columns>
