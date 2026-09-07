@@ -103,6 +103,11 @@ def _validate_lot_received_quantity(
     if lot is None:
         raise HTTPException(status_code=404, detail="lot not found")
 
+    # LOT quantity is a production plan, not a cap on actual inspected quantity.
+    # Additional production may still await inspection after a split meets the plan.
+    if is_partial:
+        return
+
     prior_query = (
         select(
             func.coalesce(
@@ -132,25 +137,12 @@ def _validate_lot_received_quantity(
     accumulated_received_qty = prior_received_qty + current_received_qty
     lot_qty = int(lot.lot_qty or 0)
 
-    if accumulated_received_qty > lot_qty:
+    if accumulated_received_qty < lot_qty:
         raise HTTPException(
             status_code=422,
             detail=(
-                "누적 검수·미검수 수량이 LOT 수량을 초과할 수 없습니다. "
-                f"LOT 수량: {lot_qty}, 누적 입력: {accumulated_received_qty}"
-            ),
-        )
-    if is_partial and accumulated_received_qty >= lot_qty:
-        raise HTTPException(
-            status_code=422,
-            detail="분할검수는 LOT 잔여수량이 있을 때만 저장할 수 있습니다.",
-        )
-    if not is_partial and accumulated_received_qty != lot_qty:
-        raise HTTPException(
-            status_code=422,
-            detail=(
-                "최종검수의 누적 검수·미검수 수량은 LOT 수량과 같아야 합니다. "
-                f"LOT 수량: {lot_qty}, 누적 입력: {accumulated_received_qty}"
+                "최종검수의 누적 처리수량(미검수 포함)은 LOT 계획수량 이상이어야 합니다. "
+                f"LOT 계획수량: {lot_qty}, 누적 처리수량: {accumulated_received_qty}"
             ),
         )
 

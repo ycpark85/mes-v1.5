@@ -571,6 +571,133 @@ class InspectionResultServiceTests(unittest.TestCase):
         self.assertEqual(2, len(shipments))
         self.assertEqual([6, 20], [line.shipped_qty for line in shipments])
 
+    def test_final_result_can_correct_actual_quantity_above_lot_plan(self) -> None:
+        self.db.get(Lot, 1).lot_qty = 92_000
+        self.db.get(OrderLine, 1).order_qty = 92_000
+        self.db.get(Partner, 1).name = "덴티움"
+        self.db.commit()
+
+        for good_qty, defect_qty, stock_in_qty in (
+            (92_000, 0, 0),
+            (105_947, 1_000, 13_947),
+            (105_947, 1_000, 13_947),
+        ):
+            with self.subTest(good_qty=good_qty, defect_qty=defect_qty):
+                result, status, next_id = upsert_inspection_result(
+                    self.db, 1,
+                    good_qty=good_qty, defect_ship_qty=0, defect_qty=defect_qty,
+                    uninspected_qty=0, stock_ship_qty=0,
+                    result_ship_qty=92_000, stock_in_qty=stock_in_qty,
+                    discard_qty=0, is_partial=False,
+                    next_inspection_date=None, partial_reason=None,
+                    memo="actual production quantity", defects=[], actor="tester",
+                )
+                self.db.commit()
+
+                self.assertEqual(good_qty + defect_qty, result.inspected_qty)
+                self.assertEqual("DONE", status)
+                self.assertIsNone(next_id)
+                self.assertEqual(92_000, self.db.get(Lot, 1).lot_qty)
+                self.assertEqual("DONE", self.db.get(OrderLine, 1).status)
+                self.assertEqual(stock_in_qty, self.db.get(ProductInventory, 1).current_qty)
+                self.assertEqual(
+                    stock_in_qty,
+                    self.db.execute(select(ProductInventoryLot)).scalar_one().current_qty,
+                )
+                self.assertEqual(
+                    92_000,
+                    self.db.execute(select(ShipmentLine)).scalar_one().shipped_qty,
+                )
+                self.assertEqual(1, len(self.db.execute(select(InspectionResult)).scalars().all()))
+                movements = self.db.execute(select(ProductInventoryMovement)).scalars().all()
+                self.assertEqual(2, len(movements))
+                self.assertEqual(stock_in_qty, sum(movement.qty for movement in movements))
+
+    def test_partial_rounds_at_and_above_lot_plan_can_continue_to_final(self) -> None:
+        self.db.get(Partner, 1).name = "덴티움"
+        self.db.commit()
+        schedule_id = 1
+
+        for round_index, (good_qty, is_partial) in enumerate(
+            ((80, True), (10, True), (10, False))
+        ):
+            with self.subTest(round_index=round_index):
+                self.db.get(InspectionSchedule, schedule_id).status = "IN_PROGRESS"
+                self.db.flush()
+                result, status, next_id = upsert_inspection_result(
+                    self.db, schedule_id,
+                    good_qty=good_qty, defect_ship_qty=0, defect_qty=0,
+                    uninspected_qty=0, stock_ship_qty=0,
+                    result_ship_qty=good_qty, stock_in_qty=0,
+                    discard_qty=0, is_partial=is_partial,
+                    next_inspection_date=date(2026, 7, 11 + round_index) if is_partial else None,
+                    partial_reason="additional production remains" if is_partial else None,
+                    memo=None, defects=[], actor="tester",
+                )
+                self.db.commit()
+
+                self.assertIsNotNone(result.settled_at)
+                self.assertEqual(80, self.db.get(Lot, 1).lot_qty)
+                if is_partial:
+                    self.assertEqual("PARTIAL_DONE", status)
+                    self.assertIsNotNone(next_id)
+                    self.assertEqual("RECEIVED", self.db.get(InspectionSchedule, next_id).status)
+                    self.assertEqual("RECEIVED", self.db.get(Lot, 1).status)
+                    self.assertEqual("CLOSED", self.db.get(OrderLine, 1).status)
+                    schedule_id = next_id
+                else:
+                    self.assertEqual("DONE", status)
+                    self.assertIsNone(next_id)
+                    self.assertEqual("DONE", self.db.get(Lot, 1).status)
+                    self.assertEqual("DONE", self.db.get(OrderLine, 1).status)
+
+        results = self.db.execute(select(InspectionResult)).scalars().all()
+        shipments = self.db.execute(select(ShipmentLine)).scalars().all()
+        self.assertEqual(100, sum(result.inspected_qty for result in results))
+        self.assertEqual(100, sum(line.shipped_qty for line in shipments))
+        self.assertEqual(0, self.db.get(ProductInventory, 1).current_qty)
+
+    def test_final_result_below_lot_plan_is_still_rejected(self) -> None:
+        with self.assertRaises(HTTPException) as raised:
+            upsert_inspection_result(
+                self.db, 1,
+                good_qty=79, defect_ship_qty=0, defect_qty=0,
+                uninspected_qty=0, stock_ship_qty=0,
+                result_ship_qty=0, stock_in_qty=79,
+                discard_qty=0, is_partial=False,
+                next_inspection_date=None, partial_reason=None,
+                memo=None, defects=[], actor="tester",
+            )
+
+        self.assertEqual(422, raised.exception.status_code)
+        self.assertIn("LOT", raised.exception.detail)
+        self.assertIsNone(self.db.execute(select(InspectionResult)).scalar_one_or_none())
+        self.assertIsNone(self.db.execute(select(ProductInventoryMovement)).scalar_one_or_none())
+        self.assertEqual("IN_PROGRESS", self.db.get(InspectionSchedule, 1).status)
+
+    def test_overproduction_does_not_allow_shipment_above_order_target(self) -> None:
+        self.db.get(Partner, 1).name = "덴티움"
+        self.db.commit()
+
+        with self.assertRaises(HTTPException) as raised:
+            upsert_inspection_result(
+                self.db, 1,
+                good_qty=120, defect_ship_qty=0, defect_qty=0,
+                uninspected_qty=0, stock_ship_qty=0,
+                result_ship_qty=101, stock_in_qty=19,
+                discard_qty=0, is_partial=False,
+                next_inspection_date=None, partial_reason=None,
+                memo=None, defects=[], actor="tester",
+            )
+        self.db.rollback()
+
+        self.assertEqual(422, raised.exception.status_code)
+        self.assertIn("남은 출고수량", raised.exception.detail)
+        self.assertIsNone(self.db.execute(select(InspectionResult)).scalar_one_or_none())
+        self.assertIsNone(self.db.execute(select(ProductInventoryMovement)).scalar_one_or_none())
+        self.assertIsNone(self.db.execute(select(ShipmentLine)).scalar_one_or_none())
+        self.assertEqual("IN_PROGRESS", self.db.get(InspectionSchedule, 1).status)
+
     def _seed_base_data(self) -> None:
         self.db.add_all(
             [

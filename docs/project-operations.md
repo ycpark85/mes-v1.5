@@ -28,7 +28,8 @@
 - Completing the customer shipment target does not complete the LOT while inspection work remains. The order line becomes `DONE` only after all active LOTs are done and recorded shipment movements meet the partner-specific shipment target.
 - `inspection_result.settled_at` and `settled_by` identify rounds whose shipment, stock-in, and disposal settlement has been applied.
 - Migration `4f5a6b7c8d9e` marks historical completed results and zero-sellable results as settled. Positive historical split results remain explicit carry-in and are marked settled in the same transaction as the next saved settlement.
-- A split round cannot contain uninspected quantity. The final round must make cumulative inspected plus uninspected quantity exactly equal the LOT quantity.
+- LOT quantity is the production plan, not an upper bound on actual inspection quantity. Both split and final rounds may reach or exceed it for additional production without changing the planned LOT quantity or the order shipment target. A split round remains open through its next schedule even after reaching the plan.
+- A split round cannot contain uninspected quantity. The final round must make cumulative inspected plus uninspected quantity at least the planned LOT quantity; closing below the plan remains blocked. Sellable allocation reconciliation and the order shipment limit still apply to overproduction.
 
 ## Authentication Session Revocation
 
