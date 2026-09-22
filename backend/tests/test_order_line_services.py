@@ -1144,18 +1144,49 @@ class OrderLineServicesTests(unittest.TestCase):
 
         self.assertEqual(409, ctx.exception.status_code)
 
-    def test_short_close_order_line_status_marks_done_and_appends_remaining_qty_memo(self) -> None:
+    def test_short_close_survives_memo_edit_and_records_decision(self) -> None:
         order_line = self._seed_closed_order_line_with_lots()
+        original_memo = order_line.memo
 
         updated = short_close_order_line_status(
             self.db,
             order_line.order_line_id,
             OrderLineShortCloseRequest(memo="customer accepted shortage"),
+            actor="tester",
         )
 
         self.assertEqual("DONE", updated.status)
-        self.assertIn("[SHORT_CLOSE] remaining_ship_qty=102", updated.memo)
-        self.assertIn("customer accepted shortage", updated.memo)
+        self.assertEqual(original_memo, updated.memo)
+        self.assertEqual("CONFIRMED", updated.short_close_state)
+        history = self.db.execute(select(OrderLineChangeLog).where(
+            OrderLineChangeLog.change_type == "SHORT_CLOSE")).scalar_one()
+        self.assertEqual("tester", history.created_by)
+        self.assertEqual("customer accepted shortage", history.reason)
+        self.assertEqual(102, history.after_data["remaining_ship_qty"])
+        from app.services.order_fulfillment_policy import sync_order_fulfillment_status
+        updated.memo = "ordinary edited memo"
+        sync_order_fulfillment_status(self.db, updated)
+        self.assertEqual("DONE", updated.status)
+
+    def test_memo_marker_cannot_freeze_unfulfilled_order(self) -> None:
+        from app.services.order_fulfillment_policy import sync_order_fulfillment_status
+        order_line = self._seed_closed_order_line_with_lots()
+        order_line.status = "DONE"
+        order_line.memo = "ordinary memo mentions [SHORT_CLOSE]"
+        sync_order_fulfillment_status(self.db, order_line)
+        self.assertEqual("CLOSED", order_line.status)
+
+    def test_legacy_review_state_survives_memo_edit_without_fabricating_confirmation(self) -> None:
+        from app.services.order_fulfillment_policy import sync_order_fulfillment_status
+        order_line = self._seed_closed_order_line_with_lots()
+        order_line.status = "DONE"
+        order_line.short_close_state = "REVIEW_REQUIRED"
+        order_line.memo = "edited ordinary memo"
+        sync_order_fulfillment_status(self.db, order_line)
+        self.assertEqual("DONE", order_line.status)
+        output = build_order_line_out(self.db, order_line)
+        self.assertEqual("REVIEW_REQUIRED", output.short_close_state)
+        self.assertFalse(output.shortage_closed)
 
     def test_short_close_order_line_status_rejects_when_no_remaining_ship_qty(self) -> None:
         order_line = self._seed_closed_order_line_with_lots()
@@ -1178,6 +1209,7 @@ class OrderLineServicesTests(unittest.TestCase):
                 self.db,
                 order_line.order_line_id,
                 OrderLineShortCloseRequest(memo="no shortage"),
+                actor="tester",
             )
 
         self.assertEqual(409, ctx.exception.status_code)

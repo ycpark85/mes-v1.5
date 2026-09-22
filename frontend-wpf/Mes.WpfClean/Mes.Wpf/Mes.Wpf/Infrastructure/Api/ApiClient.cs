@@ -18,10 +18,12 @@ namespace Mes.Wpf.Infrastructure.Api
             "서버에 연결할 수 없습니다. 네트워크와 서버 상태를 확인하세요.";
         private const string NormalTimeoutMessage =
             "요청 시간이 초과되었습니다. 잠시 후 다시 시도하세요.";
+        private const string WriteTimeoutMessage =
+            "요청 시간이 초과되어 저장 여부를 확인할 수 없습니다. 목록을 새로 조회하여 처리 결과를 확인한 후 다시 시도하세요.";
         private const string BulkTimeoutMessage =
             "대량 처리 요청 시간이 초과되었습니다. 처리 결과를 확인한 후 다시 시도하세요.";
         private const string FileTimeoutMessage =
-            "파일 전송 시간이 초과되었습니다. 네트워크 상태를 확인한 후 다시 시도하세요.";
+            "파일 전송 시간이 초과되었습니다. 처리 결과와 네트워크 상태를 확인한 후 다시 시도하세요.";
 
         private static readonly JsonSerializerOptions JsonOptions = CreateJsonOptions();
         private readonly HttpClient _httpClient;
@@ -29,7 +31,9 @@ namespace Mes.Wpf.Infrastructure.Api
         private readonly TimeSpan _bulkTimeout;
         private readonly TimeSpan _fileTransferTimeout;
 
-        public ApiClient(ApiSettings settings)
+        public ApiClient(ApiSettings settings) : this(settings, null) { }
+
+        internal ApiClient(ApiSettings settings, HttpMessageHandler? handler)
         {
             ArgumentNullException.ThrowIfNull(settings);
 
@@ -48,11 +52,12 @@ namespace Mes.Wpf.Infrastructure.Api
             _normalTimeout = TimeSpan.FromSeconds(settings.NormalTimeoutSeconds);
             _bulkTimeout = TimeSpan.FromSeconds(settings.BulkTimeoutSeconds);
             _fileTransferTimeout = TimeSpan.FromSeconds(settings.FileTransferTimeoutSeconds);
-            _httpClient = new HttpClient
-            {
-                BaseAddress = new Uri(settings.BaseUrl),
-                Timeout = Timeout.InfiniteTimeSpan
-            };
+            _httpClient = handler is null ? new HttpClient() : new HttpClient(handler);
+            _httpClient.BaseAddress = new Uri(settings.BaseUrl);
+            _httpClient.Timeout = Timeout.InfiniteTimeSpan;
+            _httpClient.DefaultRequestHeaders.Add("X-MES-Client-Contract", ClientRuntime.ContractVersion.ToString());
+            _httpClient.DefaultRequestHeaders.Add("X-MES-Client-Version", ClientRuntime.Version);
+            _httpClient.DefaultRequestHeaders.Add("X-MES-Client-Build", ClientRuntime.BuildId);
         }
 
         private static JsonSerializerOptions CreateJsonOptions()
@@ -96,7 +101,7 @@ namespace Mes.Wpf.Infrastructure.Api
                 cancellationToken => _httpClient.PostAsJsonAsync(relativeUrl, request, cancellationToken),
                 "POST 요청 실패",
                 _normalTimeout,
-                NormalTimeoutMessage);
+                WriteTimeoutMessage);
         }
 
         public Task<ApiResult<TResponse>> PostBulkAsync<TRequest, TResponse>(
@@ -118,7 +123,7 @@ namespace Mes.Wpf.Infrastructure.Api
                 cancellationToken => _httpClient.PutAsJsonAsync(relativeUrl, request, cancellationToken),
                 "PUT 요청 실패",
                 _normalTimeout,
-                NormalTimeoutMessage);
+                WriteTimeoutMessage);
         }
 
         public async Task<ApiResult<TResponse>> PatchAsync<TRequest, TResponse>(
@@ -134,7 +139,7 @@ namespace Mes.Wpf.Infrastructure.Api
                 cancellationToken => _httpClient.SendAsync(requestMessage, cancellationToken),
                 "PATCH 요청 실패",
                 _normalTimeout,
-                NormalTimeoutMessage);
+                WriteTimeoutMessage);
         }
 
         public async Task<ApiResult<bool>> DeleteAsync(string relativeUrl)
@@ -147,15 +152,7 @@ namespace Mes.Wpf.Infrastructure.Api
 
                 if (!response.IsSuccessStatusCode)
                 {
-                    return new ApiResult<bool>
-                    {
-                        Success = false,
-                        Data = false,
-                        Message = await BuildErrorMessageAsync(
-                            response,
-                            "DELETE 요청 실패",
-                            timeoutCts.Token)
-                    };
+                    return await ReadFailureAsync<bool>(response, "DELETE 요청 실패", timeoutCts.Token);
                 }
 
                 return new ApiResult<bool>
@@ -166,7 +163,7 @@ namespace Mes.Wpf.Infrastructure.Api
             }
             catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested)
             {
-                return Failure<bool>(NormalTimeoutMessage);
+                return Failure<bool>(WriteTimeoutMessage);
             }
             catch (HttpRequestException)
             {
@@ -221,10 +218,10 @@ namespace Mes.Wpf.Infrastructure.Api
 
                 if (!response.IsSuccessStatusCode)
                 {
-                    return Failure<bool>(await BuildErrorMessageAsync(
+                    return await ReadFailureAsync<bool>(
                         response,
                         "파일 다운로드 실패",
-                        timeoutCts.Token));
+                        timeoutCts.Token);
                 }
 
                 await using (var source = await response.Content.ReadAsStreamAsync(timeoutCts.Token))
@@ -283,10 +280,10 @@ namespace Mes.Wpf.Infrastructure.Api
 
                 if (!response.IsSuccessStatusCode)
                 {
-                    return Failure<T>(await BuildErrorMessageAsync(
+                    return await ReadFailureAsync<T>(
                         response,
                         errorPrefix,
-                        timeoutCts.Token));
+                        timeoutCts.Token);
                 }
 
                 var data = await response.Content.ReadFromJsonAsync<T>(
@@ -313,68 +310,18 @@ namespace Mes.Wpf.Infrastructure.Api
             }
         }
 
-        private static async Task<string> BuildErrorMessageAsync(
+        private static async Task<ApiResult<T>> ReadFailureAsync<T>(
             HttpResponseMessage response,
             string defaultPrefix,
             CancellationToken cancellationToken)
         {
-            try
-            {
-                var raw = await response.Content.ReadAsStringAsync(cancellationToken);
-
-                if (!string.IsNullOrWhiteSpace(raw))
-                {
-                    using var doc = JsonDocument.Parse(raw);
-
-                    if (doc.RootElement.ValueKind == JsonValueKind.Object)
-                    {
-                        if (doc.RootElement.TryGetProperty("detail", out var detailElement))
-                        {
-                            var detail = detailElement.GetString();
-                            if (!string.IsNullOrWhiteSpace(detail))
-                            {
-                                return AppendRequestId(response, detail);
-                            }
-                        }
-
-                        if (doc.RootElement.TryGetProperty("message", out var messageElement))
-                        {
-                            var message = messageElement.GetString();
-                            if (!string.IsNullOrWhiteSpace(message))
-                            {
-                                return AppendRequestId(response, message);
-                            }
-                        }
-                    }
-                }
-            }
-            catch (OperationCanceledException)
-            {
-                throw;
-            }
-            catch
-            {
-            }
-
-            return AppendRequestId(
-                response,
-                $"{defaultPrefix}: {(int)response.StatusCode}");
-        }
-
-        private static string AppendRequestId(
-            HttpResponseMessage response,
-            string message)
-        {
-            if (response.Headers.TryGetValues("X-Request-ID", out var values))
-            {
-                var requestId = values.FirstOrDefault();
-                if (!string.IsNullOrWhiteSpace(requestId))
-                {
-                    return $"{message}\n요청 ID: {requestId}";
-                }
-            }
-
-            return message;
+            var raw = await response.Content.ReadAsStringAsync(cancellationToken);
+            var requestId = response.Headers.TryGetValues("X-Request-ID", out var values)
+                ? values.FirstOrDefault() : null;
+            var errorCode = response.Headers.TryGetValues("X-MES-Error-Code", out var codes)
+                ? codes.FirstOrDefault() : null;
+            var error = ApiErrorParser.Parse(raw, (int)response.StatusCode, defaultPrefix, requestId, errorCode);
+            return new ApiResult<T> { Success = false, Message = error.Message, Error = error };
         }
 
         private static ApiResult<T> Failure<T>(string message)

@@ -1,0 +1,36 @@
+<Window x:Class="Mes.Wpf.Modules.Inventories.Views.InventoryAdjustmentWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="LOT 재고조정" Width="520" SizeToContent="Height" ResizeMode="NoResize"
+        WindowStartupLocation="CenterOwner">
+    <Grid Margin="24">
+        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+        <StackPanel Margin="0,0,0,18">
+            <TextBlock Text="{Binding ProductName}" FontSize="18" FontWeight="SemiBold"/>
+            <TextBlock Text="{Binding LotNo, StringFormat=LOT: {0}}" Margin="0,8,0,4"/>
+            <TextBlock><Run Text="현재 재고 "/><Run Text="{Binding CurrentQty, Mode=OneWay, StringFormat=N0}"/><Run Text=" "/><Run Text="{Binding Uom, Mode=OneWay}"/></TextBlock>
+        </StackPanel>
+        <Grid Grid.Row="1" IsEnabled="{Binding CanInput}">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="110"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+            <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+            <TextBlock Text="조정구분" VerticalAlignment="Center"/>
+            <ComboBox Grid.Column="1" ItemsSource="{Binding Directions}" SelectedItem="{Binding Direction}" AutomationProperties.Name="조정구분" Margin="0,0,0,12"/>
+            <TextBlock Grid.Row="1" Text="조정수량" VerticalAlignment="Center"/>
+            <TextBox x:Name="QtyInput" Grid.Row="1" Grid.Column="1" Text="{Binding Qty, UpdateSourceTrigger=PropertyChanged, ValidatesOnExceptions=True}" AutomationProperties.Name="조정수량" Margin="0,0,0,12"/>
+            <TextBlock Grid.Row="2" Text="조정 사유 (필수)" VerticalAlignment="Top"/>
+            <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding Memo, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="조정 사유" MaxLength="1000" AcceptsReturn="True" TextWrapping="Wrap" Height="90" VerticalScrollBarVisibility="Auto"/>
+        </Grid>
+        <TextBlock Grid.Row="2" Margin="0,12,0,18" TextWrapping="Wrap" Foreground="#475569"
+                   Text="선택한 LOT만 조정합니다. 예약된 수량은 감소할 수 없습니다. 저장 중에는 창을 닫을 수 없습니다."/>
+        <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right">
+            <Button Content="취소" Command="{Binding CloseCommand}" Width="85" Margin="0,0,8,0"/>
+            <Button Content="저장" Command="{Binding SaveCommand}" Width="85">
+                <Button.Style>
+                    <Style TargetType="Button">
+                        <Style.Triggers><DataTrigger Binding="{Binding ElementName=QtyInput, Path=(Validation.HasError)}" Value="True"><Setter Property="IsEnabled" Value="False"/></DataTrigger></Style.Triggers>
+                    </Style>
+                </Button.Style>
+            </Button>
+        </StackPanel>
+    </Grid>
+</Window>

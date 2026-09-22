@@ -9,6 +9,10 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import event
 from sqlalchemy.engine import Engine, ExceptionContext
 from sqlalchemy.exc import OperationalError, TimeoutError as SQLAlchemyTimeoutError
+from app.core.runtime_contract import (
+    CLIENT_VERSION_HEADER, CLIENT_BUILD_HEADER, SERVER_BUILD_HEADER,
+    get_runtime_info, safe_build_identifier,
+)
 
 
 REQUEST_ID_HEADER = "X-Request-ID"
@@ -54,6 +58,9 @@ async def observe_request(
     slow_request_threshold_ms: int,
 ):
     request_id = _resolve_request_id(request)
+    client_version = safe_build_identifier(request.headers.get(CLIENT_VERSION_HEADER))
+    client_build = safe_build_identifier(request.headers.get(CLIENT_BUILD_HEADER))
+    server_build = get_runtime_info().server_build
     request.state.request_id = request_id
     context_token = request_id_context.set(request_id)
     started_at = time.perf_counter()
@@ -62,6 +69,7 @@ async def observe_request(
         response = await call_next(request)
         elapsed_ms = (time.perf_counter() - started_at) * 1000
         response.headers[REQUEST_ID_HEADER] = request_id
+        response.headers[SERVER_BUILD_HEADER] = server_build
 
         log_method = (
             request_logger.warning
@@ -69,23 +77,25 @@ async def observe_request(
             else request_logger.info
         )
         log_method(
-            "request_completed request_id=%s method=%s path=%s status=%s elapsed_ms=%.1f",
+            "request_completed request_id=%s method=%s path=%s status=%s elapsed_ms=%.1f client_version=%s client_build=%s server_build=%s",
             request_id,
             request.method,
             _route_path(request),
             response.status_code,
             elapsed_ms,
+            client_version, client_build, server_build,
         )
         return response
     except Exception as exc:
         elapsed_ms = (time.perf_counter() - started_at) * 1000
         request_logger.error(
-            "request_failed request_id=%s method=%s path=%s elapsed_ms=%.1f error_type=%s",
+            "request_failed request_id=%s method=%s path=%s elapsed_ms=%.1f error_type=%s client_version=%s client_build=%s server_build=%s",
             request_id,
             request.method,
             _route_path(request),
             elapsed_ms,
             type(exc).__name__,
+            client_version, client_build, server_build,
         )
         raise
     finally:

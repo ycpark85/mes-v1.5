@@ -141,7 +141,13 @@ try {
         -Name 'backend_tests' `
         -WorkingDirectory $backendRoot `
         -Executable $python `
-        -Arguments @('-m', 'pytest', '-q')
+        -Arguments @('-m', 'pytest', '-q', '-p', 'no:cacheprovider', '--junitxml', (Join-Path $runRoot 'backend-tests.xml'))
+
+    Invoke-MesReleaseCommandStep `
+        -Name 'inspection_postgres_regressions' `
+        -WorkingDirectory $backendRoot `
+        -Executable $python `
+        -Arguments @('-m', 'scripts.inspection_regression_gate', '--report', (Join-Path $runRoot 'backend-tests.xml'))
 
     Invoke-MesReleaseCommandStep `
         -Name 'alembic_head' `
@@ -176,6 +182,17 @@ try {
         -WorkingDirectory $RepositoryRoot `
         -Executable 'dotnet' `
         -Arguments @('build', $solution, '-c', 'Release', '--no-restore', '--nologo')
+
+    foreach ($regression in @('InspectionRegression', 'ApiRegression')) {
+        $project = Join-Path $RepositoryRoot "frontend-wpf\tests\$regression\$regression.csproj"
+        $arguments = @('run', '--project', $project, '-c', 'Release', '--no-launch-profile', '--verbosity', 'quiet')
+        if ($SkipDotnetRestore) { $arguments += '--no-restore' }
+        Invoke-MesReleaseCommandStep `
+            -Name "wpf_$regression" `
+            -WorkingDirectory $RepositoryRoot `
+            -Executable 'dotnet' `
+            -Arguments $arguments
+    }
 
     Invoke-MesReleaseCommandStep `
         -Name 'wpf_release_output' `

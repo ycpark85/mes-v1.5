@@ -10,6 +10,7 @@ import tempfile
 import unittest
 import zipfile
 from pathlib import Path
+from tests.windows_test_support import windows_powershell_environment
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
@@ -38,6 +39,7 @@ class WindowsReleaseInstallationTests(unittest.TestCase):
             stderr=subprocess.PIPE,
             text=True,
             check=False,
+            env=windows_powershell_environment(),
         )
 
     def _write_package(self, root: Path) -> tuple[Path, Path, Path]:

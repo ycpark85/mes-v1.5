@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     )
 
     app_env: str = "dev"
+    MES_SERVER_BUILD_ID: str = Field(default="unknown", pattern=r"^[A-Za-z0-9._-]{1,64}$")
     database_url: str
 
     DB_POOL_SIZE: int = Field(default=5, ge=1, le=50)

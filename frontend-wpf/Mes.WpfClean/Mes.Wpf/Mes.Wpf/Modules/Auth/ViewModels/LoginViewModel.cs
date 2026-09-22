@@ -4,6 +4,7 @@ using Mes.Wpf.Core.Common;
 using Mes.Wpf.Core.Configuration;
 using Mes.Wpf.Core.Constants;
 using Mes.Wpf.Core.Interfaces;
+using Mes.Wpf.Core.Models;
 using Mes.Wpf.Modules.Auth.Dtos;
 
 namespace Mes.Wpf.Modules.Auth.ViewModels
@@ -38,6 +39,13 @@ namespace Mes.Wpf.Modules.Auth.ViewModels
         public AsyncRelayCommand LoginCommand { get; }
 
         public AuthLoginResponse? LoginResponse { get; private set; }
+        public string RuntimeDescription => ClientRuntime.Description;
+        private string _runtimeDetails = $"WPF 빌드: {ClientRuntime.BuildId}";
+        public string RuntimeDetails
+        {
+            get => _runtimeDetails;
+            private set => SetProperty(ref _runtimeDetails, value);
+        }
 
         public string LoginId
         {
@@ -113,6 +121,22 @@ namespace Mes.Wpf.Modules.Auth.ViewModels
             try
             {
                 _apiClient.ClearAccessToken();
+
+                var runtime = await _apiClient.GetAsync<ApiRuntimeInfo>(ApiRoutes.RuntimeInfo);
+                if (!runtime.Success || runtime.Data is null)
+                {
+                    ErrorMessage = runtime.Error?.StatusCode == 404
+                        ? "서버의 버전 확인 기능이 없습니다. 서버 업데이트 상태를 확인하세요."
+                        : runtime.Message ?? "서버 버전을 확인할 수 없습니다.";
+                    return;
+                }
+                RuntimeDetails = $"WPF 빌드: {ClientRuntime.BuildId}\n서버: {runtime.Data.Environment} / {runtime.Data.ServerBuild}";
+                var compatibilityError = ClientRuntime.CompatibilityError(runtime.Data);
+                if (compatibilityError is not null)
+                {
+                    ErrorMessage = compatibilityError;
+                    return;
+                }
 
                 var request = new AuthLoginRequest
                 {

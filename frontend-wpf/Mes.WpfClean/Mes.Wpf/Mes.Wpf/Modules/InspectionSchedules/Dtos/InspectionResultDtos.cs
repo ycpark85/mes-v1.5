@@ -55,11 +55,29 @@ namespace Mes.Wpf.Modules.InspectionSchedules.Dtos
 
     public class InspectionInventorySummaryDto
     {
+        [JsonPropertyName("view_mode")]
+        public string? ViewMode { get; set; }
+
+        [JsonPropertyName("stock_as_of")]
+        public DateTimeOffset? StockAsOf { get; set; }
+
+        [JsonPropertyName("stock_lots")]
+        public ObservableCollection<InspectionStockLotDto>? StockLots { get; set; }
+
         [JsonPropertyName("product_id")]
         public int ProductId { get; set; }
 
         [JsonPropertyName("order_line_id")]
         public int OrderLineId { get; set; }
+
+        [JsonPropertyName("physical_stock_qty")]
+        public int PhysicalStockQty { get; set; }
+
+        [JsonPropertyName("stock_error")]
+        public string? StockError { get; set; }
+
+        [JsonPropertyName("settlement_error")]
+        public string? SettlementError { get; set; }
 
         [JsonPropertyName("current_stock_qty")]
         public int CurrentStockQty { get; set; }
@@ -126,6 +144,9 @@ namespace Mes.Wpf.Modules.InspectionSchedules.Dtos
 
         [JsonPropertyName("next_inspection_date")]
         public DateTime? NextInspectionDate { get; set; }
+
+        [JsonPropertyName("shortage_reason")]
+        public string? ShortageReason { get; set; }
 
         [JsonPropertyName("partial_reason")]
         public string? PartialReason { get; set; }
@@ -205,6 +226,8 @@ namespace Mes.Wpf.Modules.InspectionSchedules.Dtos
 
     public class InspectionResultUpsertRequest
     {
+        [JsonPropertyName("quantity_rule_version")]
+        public int QuantityRuleVersion { get; set; } = Mes.Wpf.Core.Configuration.ClientRuntime.InspectionQuantityRuleVersion;
         [JsonPropertyName("good_qty")]
         public int GoodQty { get; set; }
 
@@ -234,6 +257,9 @@ namespace Mes.Wpf.Modules.InspectionSchedules.Dtos
 
         [JsonPropertyName("next_inspection_date")]
         public DateTime? NextInspectionDate { get; set; }
+
+        [JsonPropertyName("shortage_reason")]
+        public string? ShortageReason { get; set; }
 
         [JsonPropertyName("partial_reason")]
         public string? PartialReason { get; set; }
@@ -438,6 +464,9 @@ namespace Mes.Wpf.Modules.InspectionSchedules.Dtos
         [JsonPropertyName("next_inspection_date")]
         public DateTime? NextInspectionDate { get; set; }
 
+        [JsonPropertyName("shortage_reason")]
+        public string? ShortageReason { get; set; }
+
         [JsonPropertyName("partial_reason")]
         public string? PartialReason { get; set; }
 
@@ -456,24 +485,27 @@ namespace Mes.Wpf.Modules.InspectionSchedules.Dtos
         [JsonIgnore]
         public string ResultTypeDisplay => IsPartial ? "분할" : "최종";
     }
-    public class InspectionStockLotListDto
-    {
-        [JsonPropertyName("items")]
-        public ObservableCollection<InspectionStockLotDto> Items { get; set; } = new();
-
-        [JsonPropertyName("total_stock_qty")]
-        public int TotalStockQty { get; set; }
-    }
-
     public class InspectionStockLotDto : ViewModelBase
     {
         private int _allocatedShipQty;
 
-        [JsonPropertyName("lot_id")]
-        public int LotId { get; set; }
+        [JsonPropertyName("product_inventory_lot_id")]
+        public long ProductInventoryLotId { get; set; }
+
+        [JsonPropertyName("production_lot_id")]
+        public long? ProductionLotId { get; set; }
 
         [JsonPropertyName("lot_no")]
         public string LotNo { get; set; } = string.Empty;
+
+        [JsonPropertyName("physical_qty")]
+        public int PhysicalQty { get; set; }
+
+        [JsonPropertyName("reserved_qty")]
+        public int ReservedQty { get; set; }
+
+        [JsonPropertyName("other_reserved_qty")]
+        public int OtherReservedQty { get; set; }
 
         [JsonPropertyName("stock_qty")]
         public int StockQty { get; set; }

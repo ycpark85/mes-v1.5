@@ -17,7 +17,7 @@ from app.models.product_inventory_movement import ProductInventoryMovement
 from app.models.shipment_line import ShipmentLine
 from app.services.order_line_display import to_plan_type_display
 from app.services.order_line_plan_policy import evaluate_order_line_plan_policy
-from app.services.ship_qty_policy import calculate_ship_qty
+from app.services.order_fulfillment_policy import resolve_ship_target_qty
 
 
 def list_order_lines_for_grid(
@@ -212,7 +212,7 @@ def list_order_lines_for_grid(
         latest_plan_history = latest_plan_history_map.get(ol.order_line_id)
         plan_type = latest_plan_history.plan_type if latest_plan_history else None
 
-        target_ship_qty = int(calculate_ship_qty(partner_name or "", order_qty) or 0)
+        target_ship_qty = resolve_ship_target_qty(ol, partner_name or "", latest_plan_history)
 
         plan_policy = evaluate_order_line_plan_policy(
             available_inventory_qty=available_inventory_qty,
@@ -262,7 +262,7 @@ def list_order_lines_for_grid(
             and lot_count_int > 0
         )
 
-        shortage_closed = ol.status == "DONE" and remaining_ship_qty > 0
+        shortage_closed = ol.status == "DONE" and ol.short_close_state == "CONFIRMED"
         expected_short_qty = max(target_ship_qty - expected_ship_qty, 0)
         decision_required = (
             not bool(ol.decision_made)
@@ -322,6 +322,7 @@ def list_order_lines_for_grid(
                 "remaining_ship_qty": remaining_ship_qty,
                 "needs_shortage_action": needs_shortage_action,
                 "shortage_closed": shortage_closed,
+                "short_close_state": ol.short_close_state,
             }
         )
 

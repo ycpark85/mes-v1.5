@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date
+from typing import Literal
 
 from fastapi import HTTPException, status
 from sqlalchemy import and_, case, func, or_, select
@@ -12,7 +13,6 @@ from app.models.lot import Lot
 from app.models.order_line import OrderLine
 from app.models.partner import Partner
 from app.models.product import Product
-from app.models.product_inventory import ProductInventory
 from app.models.product_inventory_movement import ProductInventoryMovement
 from app.models.shipment_line import ShipmentLine
 from app.schemas.inspection_result import (
@@ -23,12 +23,12 @@ from app.schemas.inspection_result import (
     InspectionResultListOut,
     InspectionRoundSummaryOut,
 )
-from app.services.inventory_fifo_service import get_available_inventory_lots_fifo
-from app.services.order_line_plan_service import (
-    get_latest_plan_history,
-    get_reserved_stock_shipment_qty,
-)
-from app.services.ship_qty_policy import build_shipment_progress, calculate_ship_qty
+from app.services.inspection_stock_service import get_inspection_stock_context
+from app.services.inspection_schedule_query import build_inspection_stock_lot_list
+from app.services.inspection_settlement_service import get_settlement_sources, settlement_carry_qty
+from app.services.order_fulfillment_policy import get_order_ship_target_qty
+from app.services.ship_qty_policy import build_shipment_progress
+from app.services.inspection_saved_inventory_query import project_saved_inventory
 
 
 def ensure_inspection_schedule(db: Session, inspection_schedule_id: int) -> InspectionSchedule:
@@ -121,141 +121,29 @@ def get_inspection_inventory_summary(
             detail="OrderLine not found",
         )
 
-    partner = db.get(Partner, order_line.partner_id)
-    partner_name = partner.name if partner else ""
-
+    result = db.get(InspectionResult, current_result_id) if current_result_id is not None else None
+    sources, settlement_error = get_settlement_sources(db, schedule=current_schedule, result=result)
+    prior_unsettled_sellable_qty = settlement_carry_qty(sources, existing=result is not None)
+    stock = get_inspection_stock_context(db, product_id=lot.product_id,
+        order_line_id=order_line.order_line_id, result_id=current_result_id)
+    current_stock_qty = stock.available_qty
     current_result_stock_ship_qty = 0
     current_result_result_ship_qty = 0
     current_result_stock_in_qty = 0
-    current_result_discard_qty = 0
-
-    prior_unsettled_sellable_qty = int(
-        db.execute(
-            select(
-                func.coalesce(
-                    func.sum(
-                        InspectionResult.good_qty + InspectionResult.defect_ship_qty
-                    ),
-                    0,
-                )
-            )
-            .join(
-                InspectionSchedule,
-                InspectionSchedule.inspection_schedule_id
-                == InspectionResult.inspection_schedule_id,
-            )
-            .where(
-                InspectionSchedule.lot_id == lot.lot_id,
-                InspectionSchedule.inspection_schedule_id != inspection_schedule_id,
-                InspectionSchedule.status == "PARTIAL_DONE",
-                InspectionResult.settled_at.is_(None),
-                or_(
-                    InspectionSchedule.inspection_date
-                    < current_schedule.inspection_date,
-                    and_(
-                        InspectionSchedule.inspection_date
-                        == current_schedule.inspection_date,
-                        InspectionSchedule.inspection_schedule_id
-                        < current_schedule.inspection_schedule_id,
-                    ),
-                ),
-            )
-        ).scalar_one()
-        or 0
-    )
-
-    inventory_total_qty = int(
-        db.execute(
-            select(func.coalesce(ProductInventory.current_qty, 0)).where(
-                ProductInventory.product_id == lot.product_id
-            )
-        ).scalar_one_or_none()
-        or 0
-    )
-
-    available_stock_lots = get_available_inventory_lots_fifo(
-        db,
-        product_id=lot.product_id,
-        exclude_lot_no=lot.lot_no if current_result_id is not None else None,
-        exclude_inspection_result_id=current_result_id,
-    )
-    lot_available_qty = sum(available_qty for _, available_qty in available_stock_lots)
-    reserved_for_order_line_qty = get_reserved_stock_shipment_qty(
-        db,
-        product_id=lot.product_id,
-        order_line_id=order_line.order_line_id,
-    )
-    current_stock_qty = min(
-        max(inventory_total_qty, 0),
-        lot_available_qty + reserved_for_order_line_qty,
-    )
-
-    if current_result_id is not None:
-        result = db.get(InspectionResult, current_result_id)
-        if result is not None:
-            current_result_discard_qty = int(result.discard_qty or 0)
-
-        current_result_stock_ship_qty = int(
-            db.execute(
-                select(func.coalesce(func.sum(ShipmentLine.ship_qty), 0)).where(
-                    ShipmentLine.inspection_result_id == current_result_id,
-                    ShipmentLine.source_type == "STOCK",
-                    ShipmentLine.status != "CANCELED",
-                )
-            ).scalar_one()
-            or 0
-        )
-        current_stock_qty += current_result_stock_ship_qty
-
-        current_result_result_ship_qty = int(
-            db.execute(
-                select(func.coalesce(func.sum(ShipmentLine.ship_qty), 0)).where(
-                    ShipmentLine.inspection_result_id == current_result_id,
-                    ShipmentLine.source_type == "INSPECTION_RESULT",
-                    ShipmentLine.status != "CANCELED",
-                )
-            ).scalar_one()
-            or 0
-        )
-
-        current_result_inventory_in_qty = int(
-            db.execute(
-                select(func.coalesce(func.sum(ProductInventoryMovement.qty), 0)).where(
-                    ProductInventoryMovement.inspection_result_id == current_result_id,
-                    ProductInventoryMovement.movement_type == "INSPECTION_IN",
-                    ProductInventoryMovement.source_type == "INSPECTION_RESULT_IN",
-                )
-            ).scalar_one()
-            or 0
-        )
-        if result is not None:
-            current_result_sellable_qty = int(result.good_qty or 0) + int(
-                result.defect_ship_qty or 0
-            )
-            inferred_legacy_carry_qty = max(
-                current_result_inventory_in_qty
-                + current_result_discard_qty
-                - current_result_sellable_qty,
-                0,
-            )
-            prior_unsettled_sellable_qty = max(
-                prior_unsettled_sellable_qty,
-                inferred_legacy_carry_qty,
-            )
-        current_result_stock_in_qty = max(
-            current_result_inventory_in_qty - current_result_result_ship_qty,
-            0,
-        )
-
-    else:
-        latest_plan = get_latest_plan_history(db, order_line.order_line_id)
-        if latest_plan is not None:
-            current_result_stock_ship_qty = min(
-                reserved_for_order_line_qty or int(latest_plan.stock_ship_qty or 0),
-                current_stock_qty,
-            )
-
-    ship_target_qty = calculate_ship_qty(partner_name, int(order_line.order_qty))
+    current_result_discard_qty = int(result.discard_qty or 0) if result else 0
+    if result is not None:
+        lines = db.execute(select(ShipmentLine).where(
+            ShipmentLine.inspection_result_id == current_result_id,
+            ShipmentLine.status != "CANCELED",
+        )).scalars().all()
+        current_result_stock_ship_qty = sum(int(line.ship_qty) for line in lines if line.source_type == "STOCK")
+        current_result_result_ship_qty = sum(int(line.ship_qty) for line in lines if line.source_type == "INSPECTION_RESULT")
+        inventory_in_qty = int(db.execute(select(func.coalesce(func.sum(ProductInventoryMovement.qty), 0)).where(
+            ProductInventoryMovement.inspection_result_id == current_result_id,
+            ProductInventoryMovement.movement_type == "INSPECTION_IN",
+        )).scalar_one())
+        current_result_stock_in_qty = inventory_in_qty - current_result_result_ship_qty
+    ship_target_qty = get_order_ship_target_qty(db, order_line)
 
     shipped_query = select(func.coalesce(func.sum(-ProductInventoryMovement.qty), 0)).where(
         ProductInventoryMovement.order_line_id == order_line.order_line_id,
@@ -292,6 +180,10 @@ def get_inspection_inventory_summary(
         product_id=int(lot.product_id),
         order_line_id=int(order_line.order_line_id),
         current_stock_qty=current_stock_qty,
+        stock_lots=build_inspection_stock_lot_list(db, product_id=lot.product_id, stock=stock).items,
+        physical_stock_qty=stock.physical_qty,
+        stock_error=stock.error,
+        settlement_error=settlement_error,
         order_qty=int(order_line.order_qty),
         ship_target_qty=ship_target_qty,
         already_shipped_qty=already_shipped_qty,
@@ -386,6 +278,7 @@ def list_inspection_results_for_grid(
             InspectionResult.is_partial,
             InspectionResult.next_inspection_date,
             InspectionResult.partial_reason,
+            InspectionResult.shortage_reason,
             OrderLine.due_date,
             Partner.name.label("partner_name"),
             Product.product_code,
@@ -498,6 +391,7 @@ def list_inspection_results_for_grid(
                 is_partial=bool(row["is_partial"]),
                 next_inspection_date=row["next_inspection_date"],
                 partial_reason=row["partial_reason"],
+                shortage_reason=row["shortage_reason"],
                 due_date=row["due_date"],
                 partner_name=str(row["partner_name"] or ""),
                 product_code=str(row["product_code"] or ""),
@@ -534,6 +428,8 @@ def list_inspection_results_for_grid(
 def get_inspection_result_detail(
     db: Session,
     inspection_schedule_id: int,
+    *,
+    view_mode: Literal["edit", "saved"] = "edit",
 ) -> InspectionResultGetOut:
     schedule = ensure_inspection_schedule(db, inspection_schedule_id)
 
@@ -553,6 +449,10 @@ def get_inspection_result_detail(
         inspection_schedule_id=inspection_schedule_id,
         current_result_id=result.inspection_result_id if result else None,
     )
+    if view_mode == "saved":
+        if result is None:
+            raise HTTPException(status_code=404, detail="저장된 검수실적이 없습니다.")
+        inventory = project_saved_inventory(db, result=result, summary=inventory)
 
     rounds = _get_inspection_rounds(db, lot_id=schedule.lot_id)
     inspection_round = next(
@@ -610,6 +510,7 @@ def _get_inspection_rounds(
             is_partial=result.is_partial,
             next_inspection_date=result.next_inspection_date,
             partial_reason=result.partial_reason,
+            shortage_reason=result.shortage_reason,
             good_qty=int(result.good_qty or 0),
             defect_ship_qty=int(result.defect_ship_qty or 0),
             defect_qty=int(result.defect_qty or 0),

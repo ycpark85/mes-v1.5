@@ -9,6 +9,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
+from app.db.inspection_read import get_inspection_read_db
 from app.services.inspection_schedule_service import (
     cancel_inspection_schedule as cancel_inspection_schedule_service,
     create_inspection_schedule as create_inspection_schedule_service,
@@ -191,7 +192,7 @@ def download_inspection_schedule_plate_data(
 @router.get("/{inspection_schedule_id}/stock-lots", response_model=InspectionStockLotListOut)
 def get_inspection_stock_lots(
     inspection_schedule_id: int,
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_inspection_read_db),
 ):
     return list_inspection_stock_lots(db, inspection_schedule_id)
 

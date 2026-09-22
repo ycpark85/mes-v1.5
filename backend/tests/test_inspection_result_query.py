@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from unittest.mock import patch
 from datetime import date, datetime, timedelta
 
 from sqlalchemy import BigInteger, create_engine
@@ -125,7 +126,9 @@ class InspectionResultQueryTests(unittest.TestCase):
         self.assertIsNotNone(detail.inventory)
         self.assertEqual(1, detail.inventory.product_id)
         self.assertEqual(1, detail.inventory.order_line_id)
-        self.assertEqual(24, detail.inventory.current_stock_qty)
+        self.assertEqual(0, detail.inventory.current_stock_qty)
+        self.assertIn("LOT", detail.inventory.stock_error)
+        self.assertIsNotNone(detail.inventory.settlement_error)
         self.assertEqual(100, detail.inventory.order_qty)
         self.assertEqual(102, detail.inventory.ship_target_qty)
         self.assertEqual(10, detail.inventory.already_shipped_qty)
@@ -140,7 +143,26 @@ class InspectionResultQueryTests(unittest.TestCase):
         self.assertEqual(20, detail.inventory.current_result_result_ship_qty)
         self.assertEqual(40, detail.inventory.current_result_stock_in_qty)
         self.assertEqual(3, detail.inventory.current_result_discard_qty)
-        self.assertEqual(35, detail.inventory.prior_unsettled_sellable_qty)
+        self.assertEqual(0, detail.inventory.prior_unsettled_sellable_qty)  # Unlinked history is not guessed at runtime.
+
+    def test_detail_includes_stock_rows_from_its_single_stock_context(self) -> None:
+        from app.services.inspection_stock_service import get_inspection_stock_context
+        from app.services.inspection_schedule_query import list_inspection_stock_lots
+        with patch("app.services.inspection_result_query.get_inspection_stock_context",
+                   wraps=get_inspection_stock_context) as capture:
+            detail = get_inspection_result_detail(self.db, 2)
+        capture.assert_called_once()
+        inventory = detail.inventory
+        stock = list_inspection_stock_lots(self.db, 2)
+        self.assertEqual(stock.items, inventory.stock_lots)
+        self.assertEqual(stock.total_stock_qty, inventory.current_stock_qty)
+        self.assertEqual(stock.physical_stock_qty, inventory.physical_stock_qty)
+        self.assertEqual(stock.stock_error, inventory.stock_error)
+        self.assertEqual(inventory.current_stock_qty, sum(row.stock_qty for row in inventory.stock_lots))
+        payload = detail.model_dump(mode="json")
+        self.assertIn("stock_lots", payload["inventory"])
+        self.assertTrue(all("product_inventory_lot_id" in row and "production_lot_id" in row
+                            for row in payload["inventory"]["stock_lots"]))
 
     def test_saved_result_shipment_is_not_counted_twice_in_preview_baseline(self) -> None:
         order_line = self.db.get(OrderLine, 1)

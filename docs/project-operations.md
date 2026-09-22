@@ -1,11 +1,126 @@
 # Project Operations
 
+## GitHub deployment preparation — 2026-09-22
+
+- [Upload scope and verification](github-upload-preparation-2026-09-22.md) records the accumulated development changes prepared on `codex/prepare-server-deployment-20260922` for `ycpark85/mes-v1.5`.
+- Source, tests, migration files and operating documents are included. Local settings, temporary data, build outputs and Python caches are excluded. No production deployment, database migration or `main` update is part of this upload step.
+
+## Inspection shipments above the target — 2026-09-22
+
+- Inspection result registration and editing allow shipments above the order's remaining shipment target. Both partial and final inspection may ship all sellable production, including when prior shipments already met or exceeded the target. Existing-stock and production shipments may be combined within available stock and balanced production allocation.
+- WPF form validation and backend inspection settlement no longer enforce the target as a maximum. The target remains visible and unchanged; actual shipped quantities are preserved and remaining shipment is displayed as `max(target - shipped, 0)`.
+- Stock availability, other orders' reservations, quantity conservation, issued-document protection, concurrency and fulfillment-state rules remain in force. This change applies to inspection result saving; the separate shipment-confirmation action retains its current rules.
+- [Implementation and verification](inspection-over-target-shipment-2026-09-22.md) records the development-only change, tests and manual checks. It supersedes earlier inspection descriptions that prohibit shipments above the target.
+
+## Final inspection without a shortage reason — 2026-09-22
+
+- Final inspection saves actual quantities whether they are below, equal to or above the LOT plan. Neither the WPF form nor the backend requires a shortage reason. The reason input has been removed; existing recorded reasons remain available in history and survive WPF edits.
+- Actual good, defective and uninspected quantities are not adjusted to match the plan. Positive processed quantity, balanced allocations, stock availability and partial-inspection requirements still apply. LOT completion remains separate from order fulfillment. The later change above also removes inspection shipment-target limits.
+- No schema migration or production deployment accompanies this development change. [Implementation and verification](inspection-shortage-reason-removal-2026-09-22.md) supersedes earlier dated documents that require a final-inspection shortage reason.
+
+## Night inspection registration analysis — 2026-09-18
+
+- [Night registration findings and reproduction](night-inspection-registration-analysis-2026-09-18.md): no fixed 20:00 save cutoff was found in current source. Token lifetime defaults to 720 minutes and the development configuration also uses 720; an 08:00 login expires at 20:00 even during continued use. Current WPF has no token renewal or input-preserving reauthentication flow. Production runtime configuration and incident logs remain unverified.
+- Synthetic tests reproduced expired-auth rejection before the inspection save service and verified final/partial saves at night and across midnight. Starting a not-yet-started previous-day schedule after Korea midnight is separately rejected by the existing date rule; saving an already-started result has no such date check. All 43 targeted checks passed. Only diagnostic artifacts/documentation were added; application code, environment settings, business data and the system clock were unchanged.
+
+## Inspection and inventory review fixes — 2026-09-18
+
+- [Corrections, contracts, changed files and verification](inspection-inventory-review-fixes-2026-09-18.md) closes R1–R4 from the review below. Existing defect notes (including blanks) survive master-data lookup; new defect selection still uses the master default.
+- Inventory history optionally returns `stock_snapshot` with the filtered LOT page, all-page filtered total and product total from the same read-only repeatable-read transaction. WPF applies these together, preserves the user's latest LOT selection, and ignores superseded history/status updates. The server clamps an expired stock page; removed LOTs clear their detail. Missing snapshots show a server-update notice without partially replacing quantities.
+- Unused client FIFO allocation-preview calculations and computed properties were deleted. Actual server shipment allocation and historical settlement ownership remain in use. Both manual-adjustment contracts now require a nonblank 1–1,000-character reason; the compatibility route remains available for valid legacy requests.
+- Corrected the inventory documentation: production receipts and shipments are separate ledger entries; the inspection form's stock-in is the residual. No business-data repair or schema migration was performed.
+- Verification: backend **395 passed, 1 skipped, 65 subtests passed**, including the new concurrent inventory snapshot test and all required PostgreSQL release checks; WPF inspection **79**, inventory **58** (including actual control rendering), API **34** checks passed. Main Debug build: zero warnings/errors. The single skip is a symbolic-link test unavailable to the Windows test account.
+- The dedicated local 55439 regression server was stopped after testing. Development business data and production were not changed. Deploy the backend before the WPF; live business-data operations and operational load remain manual acceptance checks.
+
+## Inspection and inventory change review — 2026-09-18
+
+- [Review, reproductions and correction priorities](inspection-inventory-change-review-2026-09-18.md) records four reproduced defects: saved defect notes overwritten by master notes, partial stock-summary refresh, LOT selection overwritten during refresh, and stale product status after chained asynchronous requests. Application code and business data were not changed by that review; the subsequent approved fixes are recorded above.
+- At review time, unused client FIFO preview calculations and the empty-reason bypass in the legacy adjustment endpoint were cleanup candidates. Both are now addressed as recorded above. Historical settlement ownership remains necessary for existing data.
+- The earlier inventory note about immediate production shipment omitting inventory postings conflicts with actual code: production receipts and shipments are posted separately, while stock-in shown on the inspection form is the net residual. The review records the exact synthetic ledger and the required documentation correction.
+- Current verification: backend 384 passed, 49 subtests passed, 7 skipped; WPF inspection 70, inventory 46, API 34 passed. Additional synthetic probes reproduced the four defects despite the existing tests passing. PostgreSQL-specific concurrency/migration checks, live business writes and production deployment were not performed in this review.
+
+## Inventory LOT status and history side by side — 2026-09-18
+
+- [Implementation, rules and manual checks](inventory-lot-tabs-2026-09-18.md) records the final inventory page layout. The upper product grid remains; the lower area permanently shows LOT stock on the left and selected-LOT movement history on the right, with an adjustable divider. The previous tabs and return navigation have been removed.
+- Inventory grids center text and numbers horizontally and vertically. Product columns are code, name, current physical quantity, unit and last inventory update time. LOT columns are number, physical quantity and last LOT inventory update time. Times display in Korea time; narrower detail columns put date and time on separate lines.
+- Search supports product code and name. Customer display, customer search, the customer response field and the supporting order/customer lookup have been removed at the user's request.
+- Product selection waits 250 ms before requesting LOT stock. Rapid selections supersede pending lookups so only the final selection is sent. Changing product immediately clears old stock/history and shows a waiting state. Reset and explicit refresh also invalidate pending selection lookups; already-sent responses remain guarded by request version. Explicit refresh is immediate. The synthetic rapid-selection check reduced 20 selection changes to one LOT request; operational server load has not been measured.
+- Select a LOT and press 상세보기 (or Enter in the LOT grid) to load its history with date/type filters and paging. Selecting another LOT immediately clears the previous history and disables history filters until 상세보기 is pressed again; late responses for previous selections are ignored. Changing product also clears detail search conditions.
+- Zero-balance products with inventory records and zero-balance LOTs are available through the include-zero option. Quantity refreshes also update the corresponding last-modified timestamp.
+- The history endpoint calculates per-LOT running balances before date/type/page filtering, using movement ID posting order. It retains the legacy product-wide balance field separately. Inconsistent LOT ledgers return unavailable balances and a warning. LOT lists and movement reads use a short repeatable-read, read-only snapshot.
+- Manual adjustments use a distinct exact-LOT endpoint, require a reason, and preserve reservation protection and product locking. An older server cannot silently route the new adjustment through the legacy FIFO endpoint. The obsolete inline adjustment form and its unused edit model were removed; initial-stock import and consistency checks remain under management actions.
+- Latest split-layout verification: all 19 inventory backend tests and 34 inventory WPF checks passed. Actual WPF controls rendered at widths 1120 and 1440 with synthetic data; selected/detail states were visually checked and binding errors were zero. The WPF regression run also built the main project successfully. No business-data/schema changes or production deployment were performed. Full-suite and PostgreSQL reruns were not part of this layout follow-up; earlier results and their scope are retained in the detailed record. Update the backend before distributing the new WPF for the overall inventory feature.
+- Subsequent selection-delay verification: WPF build passed with zero warnings/errors and all 46 inventory checks passed, including delayed lookup, reset, refresh, retry and stale-response protection. The running development executable locked the normal build destination, so the verified output is `.tmp/inventory-debounce-build/`; the running app was not stopped or replaced. Backend code and DB were unchanged, so server tests were not rerun for this WPF-only follow-up.
+
+## Saved inspection LOT balances — 2026-09-14
+
+- [Saved inspection stock fix](inspection-saved-stock-fix-2026-09-14.md) separates read-only historical detail (`view_mode=saved`) from the existing default edit basis. Historical detail reconstructs LOT balances through that result's last inventory posting and excludes later shipments from the displayed prior-shipment total.
+- WPF explicitly requests saved detail, labels the stock table as balances after saving, and preserves posted quantities without recalculating FIFO or stock-in. Registration/edit validation continues to use current availability and all other order shipments.
+- Missing or inconsistent historical movements show an unavailable notice rather than current stock. Deploy the server before the new WPF. Business data and schema were not changed.
+
+## Inspection stock reads R07 — 2026-09-14
+
+- [Manual verification checklist](inspection-manual-checklist-2026-09-14.md) gives ordered development-screen checks and expected quantities for R01–R07; its unchecked items are not completed test results.
+- [Implementation, contract and verification](inspection-stock-refactoring-2026-09-14.md) records the stock-read refactoring. Development business data/schema and production were not changed.
+- Inspection detail now includes `inventory.stock_lots`, built from the same stock context as its summary. WPF consumes this one response and removes its separate stock-LOT request. Missing stock data is distinguished from an explicit empty array; unsupported server responses require updating the server before saving.
+- Detail GET and the compatibility `/stock-lots` GET use short PostgreSQL `REPEATABLE READ, READ ONLY` sessions. Closing the session ends the snapshot. Authentication, authorization and write transactions retain their existing behavior. Saving still validates current stock, reservations and result version under the existing locks.
+- Production LOT mapping is queried once, while reservations/movements/current shipments are summed once by inventory LOT. New rows identify `product_inventory_lot_id` and nullable `production_lot_id`; WPF uses 64-bit identifiers. The supported older client's endpoint and legacy `lot_id` remain available but the latter is documented as deprecated. Update the server before distributing the new WPF.
+- The stock table still displays only LOT number and physical quantity. Manual shipment, residual stock-in, prior-round stock availability, reservation priority/FIFO and edit rules remain unchanged. A valid response with a historical stock error continues to show that error and preserves the existing equal-value edit behavior.
+- Tests passed: backend 372 plus 49 subtests (one Windows symlink capability skip), WPF inspection 62 and API 34. Six PostgreSQL tests are now mandatory in the release gate, including read consistency and read-only-session cleanup. For synthetic stock lists of 1/20/200 LOTs, SELECTs changed from 9/28/208 to 9/9/9; operational latency has not been measured.
+
+## Inspection refactoring R05–R06 — 2026-09-14
+
+- [Implementation and verification](inspection-refactoring-implementation-2026-09-14.md) records the inspection service and screen separation. This phase did not change the development business database, schema, API contract or inspection XAML, and did not deploy to production.
+- `inspection_result_service` coordinates the existing lock, validation, settlement and state flow. `inspection_inventory_policy` calculates immutable shipment changes; `inspection_inventory_service` validates and posts them in the caller's transaction. `inspection_result_history_service` owns comparison snapshots, defect/attachment replacement and issued-document guards. Removed helper bodies are not retained as alternate execution paths.
+- The WPF `InspectionResultFormPolicy` owns quantity calculations, form validation and request construction; `InspectionPhotoService` owns upload/download/open operations. Manual shipment inputs, residual stock-in, partial settlement, reservation rules and edit concurrency remain unchanged.
+- Common `AsyncRelayCommand` implementations prevent reentry, report unexpected exceptions and restore execution state. Inspection load failures block saving until a successful reload. Photo operations use these commands; writes are not automatically retried.
+- Unexpected UI errors use an error ID and bounded local logs at `%LOCALAPPDATA%\Mes.Wpf\Logs\ui-errors.jsonl`. Logs contain exception type, client build and method names, but no exception message, input values, file paths, arguments or credentials. Other legacy asynchronous event paths remain outside this refactoring.
+- Backend and WPF tests share 12 quantity cases. The backend suite passed 366 tests and 49 subtests (one Windows symlink capability skip); inspection and API WPF checks passed 52 and 34. Required PostgreSQL checks passed. Full release validation reports WARNING for the uncommitted worktree and explicitly skipped NuGet restore; real-window confirmation and production release remain separate.
+
+## Priority refactoring R01–R04 — 2026-09-14
+
+- [Implementation, migration and verification](priority-refactoring-implementation-2026-09-14.md) records the first priority changes and the development backup. Production was not changed.
+- `order_line.short_close_state` owns the current shortage-close decision (`NONE`, `CONFIRMED`, `REVIEW_REQUIRED`). Ordinary memo text never controls completion. New decisions record actor/reason/remaining shipment in `order_line_change_log` as `SHORT_CLOSE`; plan-based decisions retain their existing immutable plan history.
+- Migration `6b7c8d9e0f1a` trusts only the latest confirmed shortage-close plan for DONE orders; legacy memo-only cases are preserved for review. New shortage-close audit entries prevent automatic downgrade. Local development is upgraded, with 11 business-table contents verified unchanged.
+- The WPF common API client preserves string/array/object error details, field errors, status/code and request ID. Writes are never automatically retried; timeout guidance requires checking saved results first.
+- `GET /api/v1/runtime-info` advertises environment, backend build, supported WPF contract and inspection quantity rules. WPF login checks compatibility. Requests identify the actual assembly version and DLL build; server logs correlate sanitized build metadata with request IDs. The server build defaults to a source fingerprint captured at process import; `MES_SERVER_BUILD_ID` can provide a release identifier. Restart the backend after updating its source.
+- Inspection saves now require `X-MES-Client-Contract: 1` and body `quantity_rule_version: 2`. Old WPF clients receive a Korean update notice **before any settlement**. Deploy backend/schema/client as a coordinated release; no legacy bypass is provided.
+- Release validation runs the existing inspection and new API WPF regression programs. The backend JUnit gate requires PostgreSQL concurrency and migration tests to pass against the dedicated `127.0.0.1:55439/mes_regression` DB/role; absent, failed, duplicate or skipped required tests block release. Windows PowerShell test subprocesses use their own module environment.
+
+## Maintenance and refactoring assessment — 2026-09-14
+
+- The user confirmed the manual inspection-shipment workflow in development. [Refactoring assessment](refactoring-assessment-2026-09-14.md) records reproduced issues, structural candidates, priorities and verification boundaries. This assessment does not change application behavior or the database.
+- Prioritize explicit short-close state, structured API error display, runtime-version traceability and release-test integration before splitting inspection settlement and screen responsibilities. Preserve the confirmed manual shipment and residual stock-in rules.
+
+## Development production-backup rehearsal — 2026-09-10
+
+- Local `127.0.0.1:5432/mes_db` was restored from the 2026-09-09 18:30 production dump and upgraded to `5a6b7c8d9e0f`. The previous development database and file storage were backed up, and database recovery was verified in an isolated local cluster.
+- Twelve real-backup scenarios met their expected results. Temporary quantity corrections were rolled back; unresolved stock/reservation discrepancies remain visible in the final development DB. Production was not modified.
+- Results, backup locations and manual checks are in [production-backup-rehearsal-2026-09-10.md](production-backup-rehearsal-2026-09-10.md). Use the Debug WPF executable for this local DB; Release configuration targets production.
+
+## Inspection correction rules — 2026-09-10 (local implementation)
+
+The implementation and production rollout checklist are in [inspection-correction-implementation-2026-09-10.md](inspection-correction-implementation-2026-09-10.md). This section supersedes older inspection quantity/edit descriptions below when they conflict.
+
+- Inspection summary, FIFO detail and saving use one order/LOT inventory context. Own reservations and prior-round inventory on the same LOT remain visible; inconsistent balances/reservations produce an explicit error.
+- Partial and final saves still complete shipment and stock deduction immediately. Since 2026-09-11, new results start both stock and production shipment quantities at zero; operators enter them explicitly. Existing results preserve their saved shipment quantities. The automatic-shipment checkbox, calculation and planned-stock prefill have been deleted. Stock replenishment uses the confirmed zero shipment target through completion.
+- Changing good quantity, shippable defects, disposal or partial/final mode never overwrites shipment inputs. Residual stock-in is still calculated automatically from the sellable settlement quantity minus production shipment and disposal. Stock shipment consumes previously stored inventory separately. Negative residuals and unavailable stock remain blocked; inspection shipments above the customer target are allowed as of 2026-09-22.
+- A round saved with zero shipment stores its remaining sellable quantity under its LOT. The next round displays that balance as existing stock; the operator can enter a stock shipment for it and a production shipment for newly inspected goods. Reservations and FIFO still determine the deducted LOTs. Previous-round stock must not be re-entered as new good quantity.
+- The inspection result form no longer shows the carry quantity beside the shipment/inventory section title (2026-09-11). Historical settlement data and quantity calculations remain intact; no database change accompanies this display removal.
+- The existing-stock LOT table shows only `LOT 번호` and `재고수량` (2026-09-11). Quantity is the LOT's physical balance (`PhysicalQty`), while reservation/availability calculations and stock-error guidance continue to govern shipment validation.
+- Final inspection may exceed the LOT plan or end below it without a shortage reason (updated 2026-09-22). No fictional uninspected quantity is generated to fill the plan.
+- Migration `5a6b7c8d9e0f` records settlement ownership and adds inspection revision history. Edits preserve owned carry and append signed inventory/shipment corrections. Equal-value or metadata-only saves preserve existing movement IDs.
+- Save contract version 2 is required; existing result edits also require their update timestamp. Issued certificates/COAs require their correction procedure before quantity edits.
+- Reservations, inspection settlement, standalone shipment and manual stock adjustment serialize through the product inventory lock. Cancellation/short close releases only unused waiting reservations; manual deductions cannot consume reserved stock.
+- Read-only preflight/postflight SQL is in `backend/scripts/inspection_correction_preflight.sql` and `backend/scripts/inspection_correction_postflight.sql`. The historical 540,000 reservation/manual deduction and product 1160's 50,000 discrepancy require business evidence; they are not automatically changed by this implementation.
+- Production migration, client deployment and historical quantity corrections have not been executed by this local change.
+
 ## MES v1.5 Baseline
 
 - MES v1.5 uses Git commit `4da47c94d361ec3e2b9eb3785fdacd5f53122f80` as its functional baseline.
 - The immutable baseline tag is `v1.5-baseline-4da47c9`.
 - Local development uses the independent `mes-v1.5` repository, its own `backend/.venv` and `backend/.env`, and the external `mes-v1.5-data` storage root.
-- The shared development database is currently aligned to Alembic head `29d3e4f5a6b7`; schema changes require a verified backup before migration.
+- The local MES v1.5 development database is aligned to Alembic head `6b7c8d9e0f1a` after the 2026-09-14 priority refactoring and verified backup/rehearsal; schema changes require a verified backup before migration.
 - Production backend deployment remains a reviewed fast-forward pull of `main`; internal and vendor WPF clients are built on the development computer and copied as separate release artifacts.
 - The detailed development, deployment, rollback, and project-separation procedure is in `docs/mes-v1.5-development-deployment.md`.
 
@@ -19,17 +134,17 @@
 ## Split Inspection Settlement
 
 - Every inspection round settles its sellable quantity immediately, including a split inspection round.
-- The operator allocates the round's sellable quantity to production shipment, inventory stock-in, and disposal; their sum must equal the current sellable quantity plus any explicitly shown legacy unsettled carry-in.
-- Existing-stock shipment is independent from the inspected production quantity and may be combined with production shipment without exceeding the order's remaining shipment target.
+- The operator enters stock shipment, production shipment and disposal. The form calculates residual inventory stock-in; production shipment, stock-in and disposal must equal the selected result's sellable total, including any applicable historical carry. Carry is not shown as a separate section-title quantity.
+- Existing-stock shipment is independent from the inspected production quantity and may be combined with production shipment above the order's remaining shipment target, provided available stock and production allocation checks pass.
 - Inspection result detail separates LOT inspection totals from order shipment progress. Shipment progress is displayed as target quantity, shipment completed before the selected result, selected-round shipment, cumulative shipment, and remaining shipment.
-- Shipment movements are the source of truth. The selected result's shipment is excluded from the prior-shipment baseline and added exactly once, so `remaining shipment = target - prior shipment - selected-round shipment`.
+- Shipment movements are the source of truth. The selected result's shipment is excluded from the prior-shipment baseline and added exactly once, so `remaining shipment = max(target - prior shipment - selected-round shipment, 0)`. Actual shipment is not capped at the target.
 - The LOT section is labeled `LOT 누적 처리현황`. `누적 검사완료 수량` is the inspected total, `누적 미검수 처리수량` is the quantity explicitly processed without inspection, and `누적 처리수량 (미검수 포함)` is their sum. Pending inspection quantities are excluded. The same total is labeled `이번 처리수량` for the selected round and `처리수량` in round history; the API field remains `received_qty`.
 - A split round changes the completed schedule to `PARTIAL_DONE`, creates the next schedule as `RECEIVED`, and keeps unused stock reservations available for the later round.
-- Completing the customer shipment target does not complete the LOT while inspection work remains. The order line becomes `DONE` only after all active LOTs are done and recorded shipment movements meet the partner-specific shipment target.
+- Completing the customer shipment target does not complete the LOT while inspection work remains. Normal fulfillment becomes `DONE` after all active LOTs are done and movements meet the confirmed shipment target. Explicit shortage-close decisions and legacy review holds are preserved independently of memo edits.
 - `inspection_result.settled_at` and `settled_by` identify rounds whose shipment, stock-in, and disposal settlement has been applied.
 - Migration `4f5a6b7c8d9e` marks historical completed results and zero-sellable results as settled. Positive historical split results remain explicit carry-in and are marked settled in the same transaction as the next saved settlement.
 - LOT quantity is the production plan, not an upper bound on actual inspection quantity. Both split and final rounds may reach or exceed it for additional production without changing the planned LOT quantity or the order shipment target. A split round remains open through its next schedule even after reaching the plan.
-- A split round cannot contain uninspected quantity. The final round must make cumulative inspected plus uninspected quantity at least the planned LOT quantity; closing below the plan remains blocked. Sellable allocation reconciliation and the order shipment limit still apply to overproduction.
+- A split round cannot contain uninspected quantity. A final round may end below the LOT plan without a shortage reason; record actual quantities without inventing uninspected quantity. Sellable allocation reconciliation still applies to overproduction, while inspection shipment-target limits have been removed.
 
 ## Authentication Session Revocation
 
@@ -50,7 +165,7 @@ The WPF client is published with `ClickOnceProfile`.
 - `PublishDir` must remain the project-local ClickOnce intermediate folder: `bin\Release\net8.0-windows\win-x64\app.publish\`.
 - Do not set `PublishDir` to the same folder as `PublishUrl`; doing so can mix raw publish files into the ClickOnce root.
 - The ClickOnce root should contain only `Application Files`, `Mes.Wpf.application`, `setup.exe`, and other ClickOnce bootstrap files.
-- `InstallUrl` and `UpdateUrl` point to `\\172.30.1.240\mes_wpf\`.
+- `InstallUrl` and `UpdateUrl` point to `\\MES-SERVER\mes_wpf\` so ClickOnce uses the authenticated server name instead of the IP-based SMB path.
 - If a publish prompt asks to overwrite an older deployment version, check for stale ClickOnce manifests under `bin\Release\net8.0-windows\win-x64\app.publish` and clean the build output before publishing again.
 - The ClickOnce deployment version is controlled by `ApplicationVersion` and `ApplicationRevision` in the publish profile.
 

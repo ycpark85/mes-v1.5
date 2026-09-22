@@ -268,18 +268,18 @@
 
                         <TextBlock Grid.Row="0"
                                    Style="{StaticResource SectionTitleStyle}"
-                                   Text="출고 / 재고 요약"/>
+                                   Text="{Binding InventorySummaryTitle}" TextWrapping="Wrap"/>
 
-                        <Grid Grid.Row="2">
+                        <Grid Grid.Row="2" Visibility="{Binding InventorySummaryAvailable, Converter={StaticResource BoolToVisibilityConverter}}">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="125"/>
                                 <ColumnDefinition Width="*"/>
                             </Grid.ColumnDefinitions>
-                            <TextBlock Grid.Column="0" Style="{StaticResource LabelTextStyle}" Text="현재고수량"/>
+                            <TextBlock Grid.Column="0" Style="{StaticResource LabelTextStyle}" Text="{Binding StockQuantityLabel}"/>
                             <TextBlock Grid.Column="1" Style="{StaticResource ValueTextStyle}" Text="{Binding CurrentStockQty, StringFormat={}{0:N0}}"/>
                         </Grid>
 
-                        <Grid Grid.Row="4">
+                        <Grid Grid.Row="4" Visibility="{Binding InventorySummaryAvailable, Converter={StaticResource BoolToVisibilityConverter}}">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="125"/>
                                 <ColumnDefinition Width="*"/>
@@ -288,7 +288,7 @@
                             <TextBlock Grid.Column="1" Style="{StaticResource ValueTextStyle}" Text="{Binding ShipTargetQty, StringFormat={}{0:N0}}"/>
                         </Grid>
 
-                        <Grid Grid.Row="6">
+                        <Grid Grid.Row="6" Visibility="{Binding InventorySummaryAvailable, Converter={StaticResource BoolToVisibilityConverter}}">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="125"/>
                                 <ColumnDefinition Width="*"/>
@@ -297,7 +297,7 @@
                             <TextBlock Grid.Column="1" Style="{StaticResource ValueTextStyle}" Text="{Binding PriorShippedQty, StringFormat={}{0:N0}}"/>
                         </Grid>
 
-                        <Grid Grid.Row="8">
+                        <Grid Grid.Row="8" Visibility="{Binding InventorySummaryAvailable, Converter={StaticResource BoolToVisibilityConverter}}">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="125"/>
                                 <ColumnDefinition Width="*"/>
@@ -306,7 +306,7 @@
                             <TextBlock Grid.Column="1" Style="{StaticResource ValueTextStyle}" Text="{Binding CurrentRoundShipQty, StringFormat={}{0:N0}}"/>
                         </Grid>
 
-                        <Grid Grid.Row="10">
+                        <Grid Grid.Row="10" Visibility="{Binding InventorySummaryAvailable, Converter={StaticResource BoolToVisibilityConverter}}">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="125"/>
                                 <ColumnDefinition Width="*"/>
@@ -314,7 +314,7 @@
                             <TextBlock Grid.Column="0" Style="{StaticResource LabelTextStyle}" Text="출고누계"/>
                             <TextBlock Grid.Column="1" Style="{StaticResource ValueTextStyle}" Text="{Binding TotalShippedQty, StringFormat={}{0:N0}}"/>
                         </Grid>
-                        <Grid Grid.Row="12">
+                        <Grid Grid.Row="12" Visibility="{Binding InventorySummaryAvailable, Converter={StaticResource BoolToVisibilityConverter}}">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="125"/>
                                 <ColumnDefinition Width="*"/>
@@ -327,12 +327,13 @@
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="8"/>
                                 <RowDefinition Height="120"/>
+                                <RowDefinition Height="Auto"/>
                             </Grid.RowDefinitions>
 
                             <TextBlock Grid.Row="0"
                FontWeight="SemiBold"
                Foreground="#374151"
-               Text="FIFO 기존재고 LOT"/>
+               Text="{Binding StockLotsTitle}"/>
 
                             <DataGrid Grid.Row="2"
               ItemsSource="{Binding StockLots}"
@@ -344,21 +345,22 @@
               RowHeaderWidth="0"
               GridLinesVisibility="Horizontal"
               Background="White"
+              ScrollViewer.HorizontalScrollBarVisibility="Auto"
               ScrollViewer.VerticalScrollBarVisibility="Auto">
                                 <DataGrid.Columns>
                                     <DataGridTextColumn Header="LOT 번호"
                                 Binding="{Binding LotNo}"
+                                MinWidth="120"
                                 Width="*"/>
 
                                     <DataGridTextColumn Header="재고수량"
-                                Binding="{Binding StockQty, StringFormat={}{0:N0}}"
-                                Width="90"/>
-
-                                    <DataGridTextColumn Header="출고 예정"
-                                Binding="{Binding AllocatedShipQty, StringFormat={}{0:N0}}"
-                                Width="110"/>
+                                Binding="{Binding PhysicalQty, StringFormat={}{0:N0}}"
+                                MinWidth="100"
+                                Width="100"/>
                                 </DataGrid.Columns>
                             </DataGrid>
+                            <TextBlock Grid.Row="3" Text="{Binding StockError}" TextWrapping="Wrap"
+                                       Foreground="#B91C1C" Margin="0,6,0,0"/>
                         </Grid>
                     </Grid>
                 </Border>
@@ -501,12 +503,7 @@
                                     <RowDefinition Height="Auto"/>
                                 </Grid.RowDefinitions>
 
-                                <DockPanel Grid.Row="0">
-                                    <TextBlock FontWeight="SemiBold" Text="출고 / 재고 처리"/>
-                                    <TextBlock DockPanel.Dock="Right"
-                                               Foreground="#B45309"
-                                               Text="{Binding PriorUnsettledSellableQty, StringFormat=이월 미정산 {0:N0}}"/>
-                                </DockPanel>
+                                <TextBlock Grid.Row="0" FontWeight="SemiBold" Text="출고 / 재고 처리"/>
 
                                 <Grid Grid.Row="2">
                                     <Grid.ColumnDefinitions>
@@ -907,6 +904,8 @@
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="10"/>
                                 <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
                             </Grid.RowDefinitions>
 
                             <TextBlock Grid.Row="0"
@@ -933,6 +932,17 @@
                              VerticalScrollBarVisibility="Auto"
                              Text="{Binding Memo, UpdateSourceTrigger=PropertyChanged}"/>
                             </Grid>
+                            <StackPanel Grid.Row="4" Margin="0,12,0,0">
+                                <TextBlock Text="{Binding AllocationPreview}" Margin="0,8,0,0" TextWrapping="Wrap"/>
+                                <StackPanel Orientation="Horizontal" Margin="0,8,0,0"
+                                            Visibility="{Binding InventorySummaryAvailable, Converter={StaticResource BoolToVisibilityConverter}}">
+                                    <TextBlock Text="{Binding PhysicalStockLabel}" Margin="0,0,6,0"/>
+                                    <TextBlock Text="{Binding PhysicalStockQty, StringFormat={}{0:N0}}"/>
+                                </StackPanel>
+                                <TextBlock Text="{Binding StockError}" Foreground="#B91C1C" TextWrapping="Wrap"/>
+                                <TextBlock Text="{Binding SettlementError}" Foreground="#B91C1C" TextWrapping="Wrap"/>
+                                <TextBlock Text="{Binding PlanShortageQty, StringFormat=LOT 계획 미달: {0:N0}}" Margin="0,12,0,4"/>
+                            </StackPanel>
                         </Grid>
                     </Border>
 
@@ -1021,6 +1031,7 @@
                                     <DataGridTextColumn Header="불량" Width="80" Binding="{Binding DefectQty, StringFormat={}{0:N0}}" ElementStyle="{StaticResource GridTextStyle}"/>
                                     <DataGridTextColumn Header="처리수량" Width="90" Binding="{Binding ReceivedQty, StringFormat={}{0:N0}}" ElementStyle="{StaticResource GridTextStyle}"/>
                                     <DataGridTextColumn Header="다음 검수일" Width="105" Binding="{Binding NextInspectionDate, StringFormat=yyyy-MM-dd}" ElementStyle="{StaticResource GridTextStyle}"/>
+                                    <DataGridTextColumn Header="미달사유" Width="180" Binding="{Binding ShortageReason}" ElementStyle="{StaticResource GridTextStyle}"/>
                                     <DataGridTextColumn Header="분할사유" Width="*" Binding="{Binding PartialReason}" ElementStyle="{StaticResource GridTextStyle}"/>
                                 </DataGrid.Columns>
                             </DataGrid>

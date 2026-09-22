@@ -123,6 +123,9 @@ namespace Mes.Wpf.Modules.OrderLineList.Dtos
         [JsonPropertyName("shortage_closed")]
         public bool ShortageClosed { get; set; }
 
+        [JsonPropertyName("short_close_state")]
+        public string ShortCloseState { get; set; } = "NONE";
+
         [JsonPropertyName("plan_type")]
         public string? PlanType { get; set; }
 
@@ -136,6 +139,7 @@ namespace Mes.Wpf.Modules.OrderLineList.Dtos
         {
             "OPEN" => "LOT 생성대기",
             "CLOSED" => "생산중",
+            "DONE" when ShortCloseState == "REVIEW_REQUIRED" => "완료(종료 확인 필요)",
             "DONE" => "완료",
             "CANCELED" => "취소",
             _ => Status
@@ -169,6 +173,8 @@ namespace Mes.Wpf.Modules.OrderLineList.Dtos
         {
             get
             {
+                if (ShortCloseState == "REVIEW_REQUIRED")
+                    return "과거 부족종료 확인 필요";
                 if (ShortageClosed)
                 {
                     return "부족종료";

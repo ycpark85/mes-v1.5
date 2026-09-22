@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from enum import Enum
-from typing import Optional, List
+from typing import Optional, List, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -113,6 +113,7 @@ class OrderLineOut(OrderLineBase):
     remaining_ship_qty: int = 0
     needs_shortage_action: bool = False
     shortage_closed: bool = False
+    short_close_state: Literal["NONE", "CONFIRMED", "REVIEW_REQUIRED"] = "NONE"
 
     
 

@@ -1,16 +1,15 @@
 using System;
 using System.Collections.ObjectModel;
 using System.Collections.Generic;
-using System.Diagnostics;
-using System.IO;
 using System.Linq;
-using System.Net.Http;
 using System.Threading.Tasks;
 using System.Windows.Input;
 using Microsoft.Win32;
 using Mes.Wpf.Core.Common;
 using Mes.Wpf.Core.Constants;
 using Mes.Wpf.Core.Interfaces;
+using Mes.Wpf.Infrastructure.Diagnostics;
+using Mes.Wpf.Modules.InspectionSchedules.Services;
 using Mes.Wpf.Modules.InspectionSchedules.Dtos;
 
 namespace Mes.Wpf.Modules.InspectionSchedules.ViewModels
@@ -19,6 +18,8 @@ namespace Mes.Wpf.Modules.InspectionSchedules.ViewModels
     {
         private readonly IApiClient _apiClient;
         private readonly IMessageService _messageService;
+        private readonly InspectionPhotoService _photos;
+        private readonly Action<Exception> _reportError;
         private readonly bool _canEdit;
         private readonly bool _canRequestEdit;
 
@@ -77,7 +78,14 @@ namespace Mes.Wpf.Modules.InspectionSchedules.ViewModels
         private string _scheduleStatus = string.Empty;
         private int _inspectionRound;
         private int _inspectionRoundCount;
-        private bool _isAutoShipmentPreviewUpdating;
+        private bool _isInitializing;
+        private bool _loadFailed;
+        private string _shortageReason = string.Empty;
+        private string _stockError = string.Empty;
+        private string _settlementError = string.Empty;
+        private int _originalOwnInventoryInQty;
+        private int _physicalStockQty;
+        private bool _inventorySummaryAvailable;
 
         public event Action<bool>? CloseRequested;
         public event Action? EditRequested;
@@ -89,10 +97,13 @@ namespace Mes.Wpf.Modules.InspectionSchedules.ViewModels
             IApiClient apiClient,
             IMessageService messageService,
             bool canEdit = true,
-            bool canRequestEdit = false)
+            bool canRequestEdit = false,
+            Action<Exception>? reportError = null)
         {
             _apiClient = apiClient;
             _messageService = messageService;
+            _photos = new InspectionPhotoService(apiClient, messageService);
+            _reportError = reportError ?? (error => UiErrorReporter.Report(error, messageService));
             _canEdit = canEdit;
             _canRequestEdit = canRequestEdit;
 
@@ -102,16 +113,14 @@ namespace Mes.Wpf.Modules.InspectionSchedules.ViewModels
             RemoveDefectCommand = new RelayCommand(
                 x => RemoveDefect(x as InspectionResultDefectEditModel),
                 x => CanEdit && x is InspectionResultDefectEditModel);
-            UploadPhotoCommand = new RelayCommand(
-                async x => await UploadPhotoAsync(x as InspectionResultDefectEditModel),
-                x => CanEdit && !IsLoading && x is InspectionResultDefectEditModel);
+            UploadPhotoCommand = new AsyncRelayCommand<InspectionResultDefectEditModel>(
+                UploadPhotoAsync, x => CanEdit && !IsLoading && x != null, _reportError);
             RemovePhotoCommand = new RelayCommand(
                 x => RemovePhoto(x as DefectAttachmentEditModel),
                 x => CanEdit && x is DefectAttachmentEditModel);
-            OpenPhotoCommand = new RelayCommand(
-                async x => await OpenPhotoAsync(x as DefectAttachmentEditModel),
-                x => !IsLoading && x is DefectAttachmentEditModel);
-            SaveCommand = new AsyncRelayCommand(SaveAsync, () => CanEdit && !IsLoading);
+            OpenPhotoCommand = new AsyncRelayCommand<DefectAttachmentEditModel>(
+                OpenPhotoAsync, x => !IsLoading && x != null, _reportError);
+            SaveCommand = new AsyncRelayCommand(SaveAsync, () => CanEdit && !IsLoading, _reportError);
             EditCommand = new RelayCommand(
                 _ => EditRequested?.Invoke(),
                 _ => CanRequestEdit && !IsLoading);
@@ -123,9 +132,18 @@ namespace Mes.Wpf.Modules.InspectionSchedules.ViewModels
             set => SetProperty(ref _stockLots, value);
         }
 
-        public int StockLotTotalQty => StockLots.Sum(x => x.StockQty);
-
-        public int StockLotAllocatedQty => StockLots.Sum(x => x.AllocatedShipQty);
+        public string ShortageReason
+        {
+            get => _shortageReason;
+            set => SetProperty(ref _shortageReason, value);
+        }
+        public string StockError { get => _stockError; set => SetProperty(ref _stockError, value); }
+        public string SettlementError { get => _settlementError; set => SetProperty(ref _settlementError, value); }
+        public int PhysicalStockQty { get => _physicalStockQty; set => SetProperty(ref _physicalStockQty, value); }
+        public int PlanShortageQty => Math.Max(PlanQty - AccumulatedReceivedQty, 0);
+        private InspectionQuantities Quantities => new(GoodQty, DefectShipQty, DefectQty, UninspectedQty,
+            StockShipQty, ResultShipQty, StockInQty, DiscardQty, PriorUnsettledSellableQty);
+        public string AllocationPreview => $"{(CanEdit ? "저장 시" : "이번 회차")} 실제 출고 {CurrentRoundShipQty:N0} / 재고편입 {StockInQty:N0} / 폐기 {DiscardQty:N0}";
 
         public long InspectionScheduleId
         {
@@ -255,15 +273,23 @@ namespace Mes.Wpf.Modules.InspectionSchedules.ViewModels
             }
         }
 
-        public int TotalQty => GoodQty + DefectShipQty + DefectQty;
-        public int ReceivedQty => TotalQty + UninspectedQty;
-        public int TotalDisposalQty => DiscardQty + UninspectedQty;
-        public int SellableQty =>
-            PriorUnsettledSellableQty + GoodQty + DefectShipQty;
+        public int TotalQty => Quantities.Inspected;
+        public int ReceivedQty => Quantities.Received;
+        public int TotalDisposalQty => Quantities.Disposal;
+        public int SellableQty => Quantities.Sellable;
 
         public bool CanEdit => _canEdit;
         public bool CanRequestEdit => _canRequestEdit && ScheduleStatus == "DONE";
         public bool IsReadOnlyMode => !CanEdit;
+        public string InventorySummaryTitle => CanEdit ? "출고 / 재고 요약" : "출고 / 재고 요약 (저장 시점)";
+        public string StockQuantityLabel => CanEdit ? "사용가능 재고" : "저장 후 재고";
+        public string PhysicalStockLabel => CanEdit ? "전체 실재고" : "저장 후 재고";
+        public string StockLotsTitle => CanEdit ? "FIFO 기존재고 LOT" : "저장 후 LOT별 재고";
+        public bool InventorySummaryAvailable
+        {
+            get => _inventorySummaryAvailable;
+            private set => SetProperty(ref _inventorySummaryAvailable, value);
+        }
         public string CloseButtonText => CanEdit ? "취소" : "닫기";
         public bool IsShipmentInputEnabled => CanEdit;
         public bool IsUninspectedInputEnabled => CanEdit && !IsPartial;
@@ -322,8 +348,7 @@ namespace Mes.Wpf.Modules.InspectionSchedules.ViewModels
             }
         }
 
-        public int CurrentRoundShipQty =>
-            Math.Max(StockShipQty, 0) + Math.Max(ResultShipQty, 0);
+        public int CurrentRoundShipQty => Quantities.Shipment;
 
         public int TotalShippedQty => PriorShippedQty + CurrentRoundShipQty;
 
@@ -494,7 +519,7 @@ namespace Mes.Wpf.Modules.InspectionSchedules.ViewModels
                         removeDefectCommand.RaiseCanExecuteChanged();
                     }
 
-                    if (UploadPhotoCommand is RelayCommand uploadPhotoCommand)
+                    if (UploadPhotoCommand is AsyncRelayCommand<InspectionResultDefectEditModel> uploadPhotoCommand)
                     {
                         uploadPhotoCommand.RaiseCanExecuteChanged();
                     }
@@ -504,7 +529,7 @@ namespace Mes.Wpf.Modules.InspectionSchedules.ViewModels
                         removePhotoCommand.RaiseCanExecuteChanged();
                     }
 
-                    if (OpenPhotoCommand is RelayCommand openPhotoCommand)
+                    if (OpenPhotoCommand is AsyncRelayCommand<DefectAttachmentEditModel> openPhotoCommand)
                     {
                         openPhotoCommand.RaiseCanExecuteChanged();
                     }
@@ -635,19 +660,58 @@ namespace Mes.Wpf.Modules.InspectionSchedules.ViewModels
 
         private async Task LoadAsync()
         {
+            _isInitializing = true;
+            _loadFailed = false;
+            InventorySummaryAvailable = false;
+            StockLots = new();
             try
             {
                 IsLoading = true;
 
                 var result = await _apiClient.GetAsync<InspectionResultResponse>(
-                    $"{ApiRoutes.InspectionSchedules}/{InspectionScheduleId}/result");
+                    $"{ApiRoutes.InspectionSchedules}/{InspectionScheduleId}/result{(CanEdit ? "" : "?view_mode=saved")}");
 
-                if (!result.Success)
+                if (!result.Success || result.Data?.Inventory == null)
                 {
+                    _loadFailed = true;
+                    _messageService.ShowError(result.Message ?? "검수 정보를 불러오지 못했습니다. 창을 다시 열어주세요.");
                     return;
                 }
 
                 var response = result.Data;
+                if (!CanEdit && response.Inventory.ViewMode != "saved")
+                {
+                    _loadFailed = true;
+                    StockError = "서버에서 저장 당시 재고를 제공하지 않습니다. 서버 업데이트를 확인한 뒤 다시 열어주세요.";
+                    _messageService.ShowError(StockError);
+                    return;
+                }
+                if (CanEdit && response.Inventory.ViewMode == "saved")
+                {
+                    _loadFailed = true;
+                    StockError = "수정에 필요한 현재 재고 정보를 받지 못했습니다. 창을 다시 열어주세요.";
+                    _messageService.ShowError(StockError);
+                    return;
+                }
+                var stockLots = response.Inventory.StockLots;
+                if (stockLots == null)
+                {
+                    _loadFailed = true;
+                    StockError = "서버에서 통합 재고 정보를 제공하지 않습니다. 서버 업데이트를 확인한 뒤 창을 다시 열어주세요.";
+                    _messageService.ShowError(StockError);
+                    return;
+                }
+                if (stockLots.Sum(row => (long)row.StockQty) != response.Inventory.CurrentStockQty
+                    || (!CanEdit && stockLots.Any(row => row.StockQty != row.PhysicalQty))
+                    || stockLots.Any(row => row.ProductInventoryLotId <= 0)
+                    || stockLots.Select(row => row.ProductInventoryLotId).Distinct().Count() != stockLots.Count)
+                {
+                    _loadFailed = true;
+                    StockError = "재고 요약과 LOT 정보가 일치하지 않습니다. 창을 다시 열어주세요.";
+                    _messageService.ShowError(StockError);
+                    return;
+                }
+                StockLots = stockLots;
                 var dto = response?.Result;
                 var accumulated = response?.Accumulated;
                 var inventory = response?.Inventory;
@@ -657,6 +721,11 @@ namespace Mes.Wpf.Modules.InspectionSchedules.ViewModels
                 InspectionRoundCount = response?.InspectionRoundCount ?? 0;
                 Rounds = response?.Rounds ?? new ObservableCollection<InspectionRoundSummaryDto>();
 
+                PhysicalStockQty = inventory?.PhysicalStockQty ?? 0;
+                StockError = inventory?.StockError ?? string.Empty;
+                InventorySummaryAvailable = CanEdit || string.IsNullOrWhiteSpace(StockError);
+                SettlementError = inventory?.SettlementError ?? string.Empty;
+                _originalOwnInventoryInQty = dto == null ? 0 : dto.GoodQty + dto.DefectShipQty - dto.DiscardQty;
                 CurrentStockQty = inventory?.CurrentStockQty ?? 0;
                 ShipTargetQty = inventory?.ShipTargetQty ?? OrderQty;
                 PriorShippedQty = inventory?.PriorShippedQty ?? 0;
@@ -684,27 +753,17 @@ namespace Mes.Wpf.Modules.InspectionSchedules.ViewModels
                     DefectQty = 0;
                     UninspectedQty = 0;
 
-                    StockShipQty = CurrentResultStockShipQty;
-                    ResultShipQty = CurrentResultResultShipQty;
+                    StockShipQty = 0;
+                    ResultShipQty = 0;
                     DiscardQty = CurrentResultDiscardQty;
                     StockInQty = CurrentResultStockInQty;
 
                     IsPartial = false;
                     NextInspectionDate = null;
                     PartialReason = string.Empty;
+                    ShortageReason = string.Empty;
                     Memo = string.Empty;
                     Defects.Clear();
-
-                    await LoadStockLotsAsync();
-                    if (StockShipQty <= 0)
-                    {
-                        ApplyAutoShipmentPreview();
-                    }
-                    else
-                    {
-                        RecalculateInventoryPreview();
-                    }
-                    AllocateStockLotsByFifo();
 
                     RecalculateTotals();
                     return;
@@ -724,6 +783,7 @@ namespace Mes.Wpf.Modules.InspectionSchedules.ViewModels
                 IsPartial = dto.IsPartial;
                 NextInspectionDate = dto.NextInspectionDate;
                 PartialReason = dto.PartialReason ?? string.Empty;
+                ShortageReason = dto.ShortageReason ?? string.Empty;
                 Memo = dto.Memo ?? string.Empty;
 
                 Defects.Clear();
@@ -765,13 +825,17 @@ namespace Mes.Wpf.Modules.InspectionSchedules.ViewModels
                     await LoadDefectTypeDisplayValuesAsync();
                 }
 
-                await LoadStockLotsAsync();
-                AllocateStockLotsByFifo();
-
                 RecalculateTotals();
+            }
+            catch (Exception error)
+            {
+                _loadFailed = true;
+                _reportError(error);
             }
             finally
             {
+                _isInitializing = false;
+                RecalculateTotals();
                 IsLoading = false;
             }
         }
@@ -819,7 +883,7 @@ namespace Mes.Wpf.Modules.InspectionSchedules.ViewModels
                 defect.DefectCode = defectType.DefectCode?.Trim().ToUpperInvariant() ?? string.Empty;
                 defect.Category1Name = defectType.Category1Name?.Trim() ?? string.Empty;
                 defect.Category2Name = defectType.Category2Name?.Trim() ?? string.Empty;
-                defect.DefectTypeMemo = defectType.Memo?.Trim() ?? string.Empty;
+                // Existing results own their saved memo, including an intentionally empty memo.
             }
         }
 
@@ -835,6 +899,7 @@ namespace Mes.Wpf.Modules.InspectionSchedules.ViewModels
             AccumulatedInspectedQty = _baseAccumulatedInspectedQty + TotalQty;
             AccumulatedUninspectedQty = _baseAccumulatedUninspectedQty + UninspectedQty;
             OnPropertyChanged(nameof(AccumulatedReceivedQty));
+            OnPropertyChanged(nameof(PlanShortageQty));
             OnPropertyChanged(nameof(SellableQty));
 
             RecalculateInventoryPreview();
@@ -842,73 +907,19 @@ namespace Mes.Wpf.Modules.InspectionSchedules.ViewModels
 
         private void RecalculateInventoryPreview()
         {
-            if (_isRecalculatingInventoryPreview)
-            {
-                return;
-            }
-
+            if (_isInitializing || _isRecalculatingInventoryPreview) return;
             try
             {
                 _isRecalculatingInventoryPreview = true;
-
-                var sellableQty = Math.Max(SellableQty, 0);
-
-                var stockShipQty = Math.Max(StockShipQty, 0);
-                var resultShipQty = Math.Max(ResultShipQty, 0);
-                var discardQty = Math.Max(DiscardQty, 0);
-
-                if (stockShipQty > CurrentStockQty)
-                {
-                    stockShipQty = CurrentStockQty;
-                }
-
-                if (resultShipQty > sellableQty)
-                {
-                    resultShipQty = sellableQty;
-                }
-
-                var maxDiscardQty = Math.Max(sellableQty - resultShipQty, 0);
-                if (discardQty > maxDiscardQty)
-                {
-                    discardQty = maxDiscardQty;
-                }
-
-                var stockInQty = Math.Max(sellableQty - resultShipQty - discardQty, 0);
-                if (_stockShipQty != stockShipQty)
-                {
-                    _stockShipQty = stockShipQty;
-                    OnPropertyChanged(nameof(StockShipQty));
-                }
-
-                if (_resultShipQty != resultShipQty)
-                {
-                    _resultShipQty = resultShipQty;
-                    OnPropertyChanged(nameof(ResultShipQty));
-                }
-
-                if (_stockInQty != stockInQty)
-                {
-                    _stockInQty = stockInQty;
-                    OnPropertyChanged(nameof(StockInQty));
-                }
-
-                if (_discardQty != discardQty)
-                {
-                    _discardQty = discardQty;
-                    OnPropertyChanged(nameof(DiscardQty));
-                    OnPropertyChanged(nameof(TotalDisposalQty));
-                }
-
+                // Keep manual shipment/disposal unchanged. A negative remainder is a visible error.
+                if (CanEdit && string.IsNullOrWhiteSpace(SettlementError))
+                    StockInQty = Quantities.ResidualStockIn;
                 OnPropertyChanged(nameof(CurrentRoundShipQty));
                 OnPropertyChanged(nameof(TotalShippedQty));
                 OnPropertyChanged(nameof(RemainingAfterCurrentQty));
-
-                AllocateStockLotsByFifo();
+                OnPropertyChanged(nameof(AllocationPreview));
             }
-            finally
-            {
-                _isRecalculatingInventoryPreview = false;
-            }
+            finally { _isRecalculatingInventoryPreview = false; }
         }
 
         private void AddDefect()
@@ -977,120 +988,36 @@ namespace Mes.Wpf.Modules.InspectionSchedules.ViewModels
             try
             {
                 IsLoading = true;
-
-                using var content = new MultipartFormDataContent();
-                using var fileStream = File.OpenRead(dialog.FileName);
-                using var streamContent = new StreamContent(fileStream);
-
-                var ext = Path.GetExtension(dialog.FileName)?.ToLowerInvariant();
-                streamContent.Headers.ContentType = ext switch
-                {
-                    ".jpg" or ".jpeg" => new System.Net.Http.Headers.MediaTypeHeaderValue("image/jpeg"),
-                    ".png" => new System.Net.Http.Headers.MediaTypeHeaderValue("image/png"),
-                    ".bmp" => new System.Net.Http.Headers.MediaTypeHeaderValue("image/bmp"),
-                    ".webp" => new System.Net.Http.Headers.MediaTypeHeaderValue("image/webp"),
-                    _ => new System.Net.Http.Headers.MediaTypeHeaderValue("application/octet-stream")
-                };
-
-                content.Add(streamContent, "file", Path.GetFileName(dialog.FileName));
-
-                var result = await _apiClient.PostMultipartAsync<DefectAttachmentUploadResponse>(
-                    $"{ApiRoutes.InspectionSchedules}/{InspectionScheduleId}/result/photos",
-                    content);
-
-                if (!result.Success || result.Data == null)
-                {
-                    _messageService.ShowError(result.Message ?? "불량사진 업로드에 실패했습니다.");
-                    return;
-                }
-
-                defect.Attachments.Add(new DefectAttachmentEditModel
-                {
-                    FileUri = result.Data.FileUri,
-                    FileName = result.Data.FileName,
-                    MimeType = result.Data.MimeType ?? string.Empty,
-                    Memo = string.Empty,
-                    LocalFilePath = dialog.FileName,
-                });
+                var attachment = await _photos.UploadAsync(InspectionScheduleId, dialog.FileName);
+                if (attachment != null) defect.Attachments.Add(attachment);
             }
-            finally
-            {
-                IsLoading = false;
-            }
+            finally { IsLoading = false; }
         }
 
         private async Task OpenPhotoAsync(DefectAttachmentEditModel? attachment)
         {
-            if (attachment == null)
-            {
-                return;
-            }
-
             try
             {
-                if (!string.IsNullOrWhiteSpace(attachment.LocalFilePath)
-                    && File.Exists(attachment.LocalFilePath))
-                {
-                    Process.Start(new ProcessStartInfo
-                    {
-                        FileName = attachment.LocalFilePath,
-                        UseShellExecute = true,
-                    });
-                    return;
-                }
-
-                if (!attachment.InspectionDefectAttachmentId.HasValue)
-                {
-                    _messageService.ShowWarning("저장된 이미지 정보가 없습니다.");
-                    return;
-                }
-
-                var extension = Path.GetExtension(attachment.FileName);
-                if (string.IsNullOrWhiteSpace(extension))
-                {
-                    extension = attachment.MimeType?.ToLowerInvariant() switch
-                    {
-                        "image/png" => ".png",
-                        "image/bmp" => ".bmp",
-                        "image/webp" => ".webp",
-                        _ => ".jpg",
-                    };
-                }
-
-                var tempDirectory = Path.Combine(Path.GetTempPath(), "MesWpf", "DefectImages");
-                Directory.CreateDirectory(tempDirectory);
-
-                var safeFileName = Path.GetFileName(attachment.FileName);
-                if (string.IsNullOrWhiteSpace(safeFileName))
-                {
-                    safeFileName = $"inspection_attachment_{attachment.InspectionDefectAttachmentId}{extension}";
-                }
-                else if (string.IsNullOrWhiteSpace(Path.GetExtension(safeFileName)))
-                {
-                    safeFileName += extension;
-                }
-
-                var tempPath = Path.Combine(tempDirectory, safeFileName);
-                var route = $"{ApiRoutes.InspectionSchedules}/result/attachments/{attachment.InspectionDefectAttachmentId}/content";
-                var download = await _apiClient.DownloadFileAsync(route, tempPath);
-
-                if (!download.Success)
-                {
-                    _messageService.ShowError(download.Message ?? "이미지 다운로드에 실패했습니다.");
-                    return;
-                }
-
-                Process.Start(new ProcessStartInfo
-                {
-                    FileName = tempPath,
-                    UseShellExecute = true,
-                });
+                IsLoading = true;
+                await _photos.OpenAsync(attachment);
             }
-            catch (Exception ex)
-            {
-                _messageService.ShowError($"이미지 열기 중 오류가 발생했습니다.\n{ex.Message}");
-            }
+            finally { IsLoading = false; }
         }
+
+        private InspectionResultDraft CreateDraft() => new()
+        {
+            Quantities = Quantities, IsPartial = IsPartial, NextInspectionDate = NextInspectionDate,
+            PartialReason = PartialReason, ShortageReason = ShortageReason, Memo = Memo,
+            ExpectedUpdatedAt = _expectedUpdatedAt, Defects = Defects
+        };
+
+        private InspectionSaveContext SaveContext() => new()
+        {
+            LoadFailed = _loadFailed, SettlementError = SettlementError, StockError = StockError,
+            AvailableStock = CurrentStockQty,
+            OriginalOwnInventoryIn = _originalOwnInventoryInQty,
+            OriginalStockShip = CurrentResultStockShipQty, OriginalProductionShip = CurrentResultResultShipQty
+        };
 
         private async Task SaveAsync()
         {
@@ -1099,51 +1026,11 @@ namespace Mes.Wpf.Modules.InspectionSchedules.ViewModels
                 return;
             }
 
-            if (ReceivedQty <= 0)
+            var draft = CreateDraft();
+            var validationError = InspectionResultFormPolicy.Validate(draft, SaveContext());
+            if (validationError != null)
             {
-                _messageService.ShowWarning("검수수량 또는 미검수수량을 입력해주세요.");
-                return;
-            }
-
-            if (!IsPartial && AccumulatedReceivedQty < PlanQty)
-            {
-                _messageService.ShowWarning("최종검수의 누적 처리수량(미검수 포함)은 LOT 계획수량 이상이어야 합니다.");
-                return;
-            }
-
-            if (ResultShipQty + StockInQty + DiscardQty != SellableQty)
-            {
-                _messageService.ShowWarning("생산 출고수량 + 판매가능폐기 + 재고편입수량은 판매가능수량과 같아야 합니다.");
-                return;
-            }
-
-            if (StockShipQty > CurrentStockQty)
-            {
-                _messageService.ShowWarning("재고 출고수량이 현재 재고수량을 초과할 수 없습니다.");
-                return;
-            }
-
-            if (IsPartial && !NextInspectionDate.HasValue)
-            {
-                _messageService.ShowWarning("분할검수일 경우 다음 검수일자를 입력해주세요.");
-                return;
-            }
-
-            if (IsPartial && string.IsNullOrWhiteSpace(PartialReason))
-            {
-                _messageService.ShowWarning("분할검수일 경우 사유/메모를 입력해주세요.");
-                return;
-            }
-
-            if (DefectQty > 0 && Defects.Count == 0)
-            {
-                _messageService.ShowWarning("불량수량이 있으면 불량내역을 등록해주세요.");
-                return;
-            }
-
-            if (Defects.Any(x => !x.DefectTypeId.HasValue))
-            {
-                _messageService.ShowWarning("불량유형을 입력해주세요.");
+                _messageService.ShowWarning(validationError);
                 return;
             }
 
@@ -1151,43 +1038,7 @@ namespace Mes.Wpf.Modules.InspectionSchedules.ViewModels
             {
                 IsLoading = true;
 
-                var request = new InspectionResultUpsertRequest
-                {
-                    GoodQty = GoodQty,
-                    DefectShipQty = DefectShipQty,
-                    DefectQty = DefectQty,
-                    UninspectedQty = IsPartial ? 0 : UninspectedQty,
-                    StockShipQty = StockShipQty,
-                    ResultShipQty = ResultShipQty,
-                    StockInQty = StockInQty,
-                    DiscardQty = DiscardQty,
-                    IsPartial = IsPartial,
-                    NextInspectionDate = IsPartial ? NextInspectionDate?.Date : null,
-                    PartialReason = IsPartial ? PartialReason.Trim() : null,
-                    Memo = string.IsNullOrWhiteSpace(Memo) ? null : Memo.Trim(),
-                    ExpectedUpdatedAt = _expectedUpdatedAt,
-                };
-
-                foreach (var defect in Defects)
-                {
-                    request.Defects.Add(new InspectionResultDefectRequest
-                    {
-                        DefectTypeId = defect.DefectTypeId ?? 0,
-                        DefectQty = defect.DefectQty,
-                        Disposition = string.IsNullOrWhiteSpace(defect.Disposition)
-                            ? "NOT_SHIPPABLE"
-                            : defect.Disposition,
-                        Memo = string.IsNullOrWhiteSpace(defect.Memo) ? null : defect.Memo.Trim(),
-                        Attachments = new ObservableCollection<DefectAttachmentRequest>(
-                            defect.Attachments.Select(x => new DefectAttachmentRequest
-                            {
-                                FileUri = x.FileUri,
-                                FileName = string.IsNullOrWhiteSpace(x.FileName) ? null : x.FileName,
-                                MimeType = string.IsNullOrWhiteSpace(x.MimeType) ? null : x.MimeType,
-                                Memo = string.IsNullOrWhiteSpace(x.Memo) ? null : x.Memo.Trim()
-                            }))
-                    });
-                }
+                var request = InspectionResultFormPolicy.BuildRequest(draft);
 
                 var result = await _apiClient.PutAsync<InspectionResultUpsertRequest, InspectionResultUpsertResponse>(
                     $"{ApiRoutes.InspectionSchedules}/{InspectionScheduleId}/result",
@@ -1206,70 +1057,6 @@ namespace Mes.Wpf.Modules.InspectionSchedules.ViewModels
             {
                 IsLoading = false;
             }
-        }
-        private async Task LoadStockLotsAsync()
-        {
-            var route = $"{ApiRoutes.InspectionSchedules}/{InspectionScheduleId}/stock-lots";
-
-            var result = await _apiClient.GetAsync<InspectionStockLotListDto>(route);
-
-            if (!result.Success || result.Data == null)
-            {
-                StockLots.Clear();
-                OnPropertyChanged(nameof(StockLotTotalQty));
-                OnPropertyChanged(nameof(StockLotAllocatedQty));
-                return;
-            }
-
-            StockLots = result.Data.Items ?? new ObservableCollection<InspectionStockLotDto>();
-
-            OnPropertyChanged(nameof(StockLotTotalQty));
-            OnPropertyChanged(nameof(StockLotAllocatedQty));
-        }
-        private void ApplyAutoShipmentPreview()
-        {
-            if (_isAutoShipmentPreviewUpdating)
-            {
-                return;
-            }
-
-            try
-            {
-                _isAutoShipmentPreviewUpdating = true;
-
-                var sellableQty = Math.Max(SellableQty, 0);
-                var remainingTargetQty = Math.Max(RemainingBeforeCurrentResultQty, 0);
-                var currentStockQty = Math.Max(CurrentStockQty, 0);
-
-                var stockShipQty = Math.Min(currentStockQty, remainingTargetQty);
-                var resultShipQty = Math.Min(sellableQty, Math.Max(remainingTargetQty - stockShipQty, 0));
-                var stockInQty = Math.Max(sellableQty - resultShipQty, 0);
-
-                StockShipQty = stockShipQty;
-                ResultShipQty = resultShipQty;
-                DiscardQty = 0;
-                StockInQty = stockInQty;
-            }
-            finally
-            {
-                _isAutoShipmentPreviewUpdating = false;
-            }
-
-            AllocateStockLotsByFifo();
-        }
-        private void AllocateStockLotsByFifo()
-        {
-            var remainingQty = Math.Max(StockShipQty, 0);
-
-            foreach (var lot in StockLots)
-            {
-                var allocatedQty = Math.Min(lot.StockQty, remainingQty);
-                lot.AllocatedShipQty = allocatedQty;
-                remainingQty -= allocatedQty;
-            }
-
-            OnPropertyChanged(nameof(StockLotTotalQty));
-            OnPropertyChanged(nameof(StockLotAllocatedQty));
         }
     }
 }

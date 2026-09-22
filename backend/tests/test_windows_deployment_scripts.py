@@ -6,6 +6,7 @@ import shutil
 import subprocess
 import unittest
 from pathlib import Path
+from tests.windows_test_support import windows_powershell_environment
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
@@ -33,6 +34,7 @@ class WindowsDeploymentScriptTests(unittest.TestCase):
             stderr=subprocess.PIPE,
             text=True,
             check=False,
+            env=windows_powershell_environment(),
         )
 
     def test_all_deployment_scripts_parse_without_errors(self) -> None:

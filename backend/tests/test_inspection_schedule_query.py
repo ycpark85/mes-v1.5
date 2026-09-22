@@ -4,7 +4,7 @@ import unittest
 from datetime import date
 
 from fastapi import HTTPException
-from sqlalchemy import BigInteger, create_engine
+from sqlalchemy import BigInteger, create_engine, event
 from sqlalchemy.ext.compiler import compiles
 from sqlalchemy.orm import sessionmaker
 
@@ -42,6 +42,7 @@ TEST_TABLE_NAMES = [
     "inspection_schedule",
     "inspection_result",
     "product_inventory",
+    "product_inventory_movement",
     "product_inventory_lot",
     "shipment_line",
 ]
@@ -65,13 +66,50 @@ class InspectionScheduleQueryTests(unittest.TestCase):
 
         self.assertEqual(1, len(result.items))
         self.assertEqual("LOT-STOCK", result.items[0].lot_no)
-        self.assertEqual(60, result.items[0].stock_qty)
-        self.assertEqual(60, result.total_stock_qty)
+        self.assertEqual(50, result.items[0].stock_qty)
+        self.assertEqual(50, result.total_stock_qty)
+        self.assertIsNotNone(result.stock_error)
 
     def test_get_detail_returns_schedule(self) -> None:
         result = get_inspection_schedule_detail(self.db, 1)
         self.assertEqual(1, result.inspection_schedule_id)
         self.assertEqual("WAITING", result.status)
+
+    def test_stock_lookup_query_count_is_constant_as_lots_grow(self) -> None:
+        def count_queries():
+            statements = []
+            def capture(conn, cursor, statement, parameters, context, executemany):
+                if statement.lstrip().upper().startswith("SELECT"):
+                    statements.append(statement)
+            self.db.expunge_all()
+            event.listen(self.engine, "before_cursor_execute", capture)
+            try:
+                result = list_inspection_stock_lots(self.db, 1)
+                return len(statements), len(result.items)
+            finally:
+                event.remove(self.engine, "before_cursor_execute", capture)
+
+        small_queries, small_rows = count_queries()
+        self.db.add_all([ProductInventoryLot(product_id=1, lot_no=f"STOCK-{i}", current_qty=1)
+                         for i in range(19)])
+        self.db.get(ProductInventory, 1).current_qty += 19
+        self.db.commit()
+        large_queries, large_rows = count_queries()
+        self.assertEqual((1, 20), (small_rows, large_rows))
+        self.assertEqual(small_queries, large_queries)
+
+    def test_stock_ids_distinguish_production_and_inventory_lots(self) -> None:
+        self.db.add(ProductInventoryLot(product_inventory_lot_id=9, product_id=1,
+                                       lot_no="STOCK-WITHOUT-PRODUCTION", current_qty=10))
+        self.db.get(ProductInventory, 1).current_qty = 90
+        self.db.commit()
+        rows = {row.lot_no: row for row in list_inspection_stock_lots(self.db, 1).items}
+        self.assertEqual((2, 1), (rows["LOT-STOCK"].production_lot_id,
+                                 rows["LOT-STOCK"].product_inventory_lot_id))
+        self.assertIsNone(rows["STOCK-WITHOUT-PRODUCTION"].production_lot_id)
+        self.assertEqual(9, rows["STOCK-WITHOUT-PRODUCTION"].product_inventory_lot_id)
+        # The additive API still serves existing clients; new code uses only explicit IDs.
+        self.assertEqual((2, 9), (rows["LOT-STOCK"].lot_id, rows["STOCK-WITHOUT-PRODUCTION"].lot_id))
 
     def test_missing_schedule_returns_not_found(self) -> None:
         with self.assertRaises(HTTPException) as ctx:

@@ -5,14 +5,15 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.time import utc_now
-from app.crud.order_line import order_line_crud
+from app.services.inventory_fifo_service import release_order_stock_reservations
 from app.models.lot import Lot
 from app.models.order_line import OrderLine
 from app.schemas.order_line import OrderLineStatus
 
 
 def cancel_order_line_status(db: Session, order_line_id: int) -> OrderLine:
-    order_line = order_line_crud.get(db, order_line_id)
+    order_line = db.execute(select(OrderLine).where(OrderLine.order_line_id == order_line_id)
+        .with_for_update().execution_options(populate_existing=True)).scalar_one_or_none()
     if not order_line or not order_line.is_active:
         raise HTTPException(status_code=404, detail="OrderLine not found")
 
@@ -35,6 +36,7 @@ def cancel_order_line_status(db: Session, order_line_id: int) -> OrderLine:
             detail="취소되지 않은 LOT가 존재하여 수주를 취소할 수 없습니다. 먼저 모든 LOT를 취소하세요.",
         )
 
+    release_order_stock_reservations(db, order_line)
     order_line.status = OrderLineStatus.CANCELED.value
     order_line.updated_at = utc_now()
 

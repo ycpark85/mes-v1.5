@@ -5,6 +5,8 @@ from typing import List, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.schemas.inspection_schedule import InspectionStockLotOut
+
 Disposition = Literal["SHIP_AS_IS", "NOT_SHIPPABLE"]
 
 
@@ -24,6 +26,7 @@ class DefectLineIn(BaseModel):
 
 
 class InspectionResultUpsertIn(BaseModel):
+    quantity_rule_version: Optional[int] = None
     good_qty: int = Field(..., ge=0)
     defect_ship_qty: int = Field(0, ge=0)
     defect_qty: int = Field(..., ge=0)
@@ -37,6 +40,7 @@ class InspectionResultUpsertIn(BaseModel):
     is_partial: bool = False
     next_inspection_date: Optional[date] = None
     partial_reason: Optional[str] = None
+    shortage_reason: Optional[str] = None
     memo: Optional[str] = None
     expected_updated_at: Optional[datetime] = None
 
@@ -87,6 +91,7 @@ class InspectionResultOut(BaseModel):
     is_partial: bool
     next_inspection_date: Optional[date] = None
     partial_reason: Optional[str] = None
+    shortage_reason: Optional[str] = None
     memo: Optional[str] = None
     created_by: Optional[str] = None
     settled_at: Optional[datetime] = None
@@ -114,8 +119,14 @@ class InspectionAccumulatedSummaryOut(BaseModel):
 class InspectionInventorySummaryOut(BaseModel):
     product_id: int
     order_line_id: int
+    view_mode: Literal["edit", "saved"] = "edit"
+    stock_as_of: Optional[datetime] = None
 
     current_stock_qty: int = 0
+    stock_lots: List[InspectionStockLotOut] = Field(default_factory=list)
+    physical_stock_qty: int = 0
+    stock_error: Optional[str] = None
+    settlement_error: Optional[str] = None
     order_qty: int = 0
     ship_target_qty: int = 0
     already_shipped_qty: int = 0
@@ -159,6 +170,7 @@ class InspectionResultListItemOut(BaseModel):
     is_partial: bool
     next_inspection_date: Optional[date] = None
     partial_reason: Optional[str] = None
+    shortage_reason: Optional[str] = None
     due_date: date
     partner_name: str
     product_code: str
@@ -187,6 +199,7 @@ class InspectionRoundSummaryOut(BaseModel):
     is_partial: bool
     next_inspection_date: Optional[date] = None
     partial_reason: Optional[str] = None
+    shortage_reason: Optional[str] = None
     good_qty: int = 0
     defect_ship_qty: int = 0
     defect_qty: int = 0

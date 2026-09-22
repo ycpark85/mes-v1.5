@@ -43,6 +43,13 @@ class InspectionResult(Base):
             name="ck_inspection_result__settlement_pair",
         ),
         Index("ix_inspection_result__schedule", "inspection_schedule_id"),
+        Index("ix_inspection_result__settlement_owner", "settlement_owner_id"),
+        CheckConstraint(
+            "(settlement_owner_id IS NULL AND settled_sellable_qty IS NULL) OR "
+            "(settlement_owner_id IS NOT NULL AND settled_sellable_qty IS NOT NULL "
+            "AND settled_sellable_qty >= 0 AND settled_at IS NOT NULL)",
+            name="ck_inspection_result__settlement_owner_pair",
+        ),
     )
 
     inspection_result_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
@@ -64,6 +71,7 @@ class InspectionResult(Base):
 
     next_inspection_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     partial_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    shortage_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     memo: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
@@ -73,6 +81,12 @@ class InspectionResult(Base):
         nullable=True,
     )
     settled_by: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    settlement_owner_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("inspection_result.inspection_result_id", ondelete="RESTRICT",
+                               name="fk_inspection_result__settlement_owner"),
+        nullable=True,
+    )
+    settled_sellable_qty: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()

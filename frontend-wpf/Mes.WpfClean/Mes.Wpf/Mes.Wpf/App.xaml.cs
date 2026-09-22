@@ -1,6 +1,8 @@
 ﻿using System;
 using System.Windows;
 using Mes.Wpf.Core.Configuration;
+using Mes.Wpf.Core.Common;
+using Mes.Wpf.Infrastructure.Diagnostics;
 using Mes.Wpf.Infrastructure.Api;
 using Mes.Wpf.Infrastructure.Dialogs;
 using Mes.Wpf.Modules.Auth.ViewModels;
@@ -17,6 +19,7 @@ namespace Mes.Wpf
             base.OnStartup(e);
 
             var messageService = new MessageService();
+            AsyncCommandErrors.Handler = error => UiErrorReporter.Report(error, messageService);
 
             try
             {

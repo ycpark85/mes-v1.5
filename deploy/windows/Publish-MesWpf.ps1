@@ -12,7 +12,7 @@ param(
     [string]$ExpectedApiBaseUrl = 'http://172.30.1.240:8000/',
 
     [ValidateNotNullOrEmpty()]
-    [string]$ExpectedInstallUrl = '\\172.30.1.240\mes_wpf\',
+    [string]$ExpectedInstallUrl = '\\MES-SERVER\mes_wpf\',
 
     [switch]$AllowNonMain
 )

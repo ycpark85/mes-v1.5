@@ -11,6 +11,7 @@ from app.models.order_line_change_log import OrderLineChangeLog
 from app.services.order_line_change_history_service import (
     ORDER_LINE_DUE_DATE_CHANGE,
     ORDER_LINE_MEMO_CHANGE,
+    ORDER_LINE_SHORT_CLOSE,
     ORDER_LINE_QUANTITY_CHANGE,
 )
 
@@ -116,6 +117,10 @@ def _build_timeline_event(
             f"메모 {_format_text(change_log.before_data.get('memo'))} → "
             f"{_format_text(change_log.after_data.get('memo'))}"
         )
+    elif change_log.change_type == ORDER_LINE_SHORT_CLOSE:
+        title = "발주 부족종료"
+        event_type = "ORDER_SHORT_CLOSED"
+        summary = f"잔여 출고량 {_to_int(change_log.after_data.get('remaining_ship_qty')):,} {uom} 부족종료"
     else:
         raise ValueError(f"Unsupported order-line change type: {change_log.change_type}")
 

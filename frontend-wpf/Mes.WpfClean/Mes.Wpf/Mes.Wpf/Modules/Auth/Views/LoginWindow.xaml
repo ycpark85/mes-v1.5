@@ -518,7 +518,8 @@
                                Foreground="#64748B"
                                FontSize="12"
                                HorizontalAlignment="Center" />
-                    <TextBlock Text="© 2026 Semi Industry Co., Ltd. All rights reserved."
+                    <TextBlock Text="{Binding RuntimeDescription}"
+                               ToolTip="{Binding RuntimeDetails}"
                                Foreground="#94A3B8"
                                FontSize="9"
                                HorizontalAlignment="Center" />

@@ -8,12 +8,14 @@ namespace Mes.Wpf.Core.Common
     {
         private readonly Func<T?, Task> _executeAsync;
         private readonly Predicate<T?>? _canExecute;
+        private readonly Action<Exception>? _onError;
         private bool _isExecuting;
 
-        public AsyncRelayCommand(Func<T?, Task> executeAsync, Predicate<T?>? canExecute = null)
+        public AsyncRelayCommand(Func<T?, Task> executeAsync, Predicate<T?>? canExecute = null, Action<Exception>? onError = null)
         {
             _executeAsync = executeAsync ?? throw new ArgumentNullException(nameof(executeAsync));
             _canExecute = canExecute;
+            _onError = onError;
         }
 
         public event EventHandler? CanExecuteChanged;
@@ -34,6 +36,9 @@ namespace Mes.Wpf.Core.Common
         }
 
         public async void Execute(object? parameter)
+            => await ExecuteAsync(parameter);
+
+        public async Task ExecuteAsync(object? parameter = null)
         {
             if (!CanExecute(parameter))
             {
@@ -45,6 +50,10 @@ namespace Mes.Wpf.Core.Common
                 _isExecuting = true;
                 RaiseCanExecuteChanged();
                 await _executeAsync(parameter is T typedParameter ? typedParameter : default);
+            }
+            catch (Exception error)
+            {
+                (_onError ?? AsyncCommandErrors.Report)(error);
             }
             finally
             {

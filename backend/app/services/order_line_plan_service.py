@@ -20,7 +20,8 @@ from app.schemas.order_line import (
     OrderLineProductionPolicy,
     OrderLineStatus,
 )
-from app.services.inventory_fifo_service import allocate_inventory_lots_fifo
+from app.services.inventory_fifo_service import allocate_inventory_lots_fifo, get_available_inventory_lots_fifo
+from app.services.inventory_lock_service import lock_product_inventory
 from app.services.production_daily_query import (
     refresh_order_line_snapshot,
     refresh_order_line_snapshots_for_product,
@@ -39,7 +40,8 @@ def get_available_inventory_qty(db: Session, product_id: int) -> int:
     )
     current_qty = int(inventory.current_qty or 0) if inventory else 0
     reserved_qty = get_reserved_stock_shipment_qty(db, product_id=product_id)
-    return max(current_qty - reserved_qty, 0)
+    lot_available = sum(qty for _, qty in get_available_inventory_lots_fifo(db, product_id=product_id))
+    return min(max(current_qty - reserved_qty, 0), lot_available)
 
 
 def get_reserved_stock_shipment_qty(
@@ -100,6 +102,7 @@ def add_stock_shipment_lines_by_inventory_lot(
     ship_qty: int,
     memo: str,
 ) -> list[ShipmentLine]:
+    lock_product_inventory(db, order_line.product_id)
     allocations, remaining_qty = get_fifo_inventory_lot_allocations(
         db,
         product_id=order_line.product_id,
@@ -250,7 +253,8 @@ def confirm_order_line_plan_decision(
     order_line_id: int,
     payload: OrderLinePlanConfirmRequest,
 ) -> tuple[OrderLine, OrderLinePlanHistory, Partner, Product]:
-    order_line = db.get(OrderLine, order_line_id)
+    order_line = db.execute(select(OrderLine).where(OrderLine.order_line_id == order_line_id)
+        .with_for_update().execution_options(populate_existing=True)).scalar_one_or_none()
 
     if not order_line or not order_line.is_active:
         raise HTTPException(status_code=404, detail="OrderLine not found")
@@ -275,6 +279,7 @@ def confirm_order_line_plan_decision(
     if not product or not product.is_active:
         raise HTTPException(status_code=404, detail="Product not found or inactive")
 
+    lock_product_inventory(db, order_line.product_id)
     actor = "system"
     plan_type = payload.plan_type
     available_inventory_qty = get_available_inventory_qty(db, order_line.product_id)
@@ -394,6 +399,7 @@ def confirm_order_line_plan_decision(
                 )
 
     order_line.decision_made = True
+    order_line.short_close_state = "CONFIRMED" if is_short_close else "NONE"
     order_line.decision_made_at = utc_now()
     order_line.decision_made_by = actor
 

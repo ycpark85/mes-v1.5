@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 from datetime import date
+from typing import Literal
 
-from fastapi import APIRouter, Depends, File, Query, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile, status
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from app.core.auth import get_current_user
+from app.core.runtime_contract import CLIENT_CONTRACT_HEADER, validate_inspection_client
 from app.db.session import get_db
+from app.db.inspection_read import get_inspection_read_db
 from app.schemas.inspection_result import (
     DefectAttachmentUploadOut,
     InspectionResultGetOut,
@@ -58,11 +61,12 @@ def list_inspection_results(
 @router.get("/{inspection_schedule_id}/result", response_model=InspectionResultGetOut)
 def get_result(
     inspection_schedule_id: int,
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_inspection_read_db),
     user=Depends(get_current_user),
+    view_mode: Literal["edit", "saved"] = "edit",
 ):
     _ = user
-    return get_inspection_result_detail(db, inspection_schedule_id)
+    return get_inspection_result_detail(db, inspection_schedule_id, view_mode=view_mode)
 
 
 @router.post(
@@ -114,9 +118,11 @@ def get_result_attachment_content(
 def put_result(
     inspection_schedule_id: int,
     body: InspectionResultUpsertIn,
+    request: Request,
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ):
+    validate_inspection_client(request.headers.get(CLIENT_CONTRACT_HEADER), body.quantity_rule_version)
     try:
         actor = getattr(user, "username", None) or getattr(user, "login_id", None) or "system"
 
@@ -134,6 +140,7 @@ def put_result(
             is_partial=body.is_partial,
             next_inspection_date=body.next_inspection_date,
             partial_reason=body.partial_reason,
+            shortage_reason=body.shortage_reason,
             memo=body.memo,
             defects=body.defects,
             actor=actor,

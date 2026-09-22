@@ -1,20 +1,19 @@
 from __future__ import annotations
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 from fastapi import HTTPException, status
 
 from app.models.inspection_result import InspectionResult
 from app.models.inspection_schedule import InspectionSchedule
 from app.models.lot import Lot
-from app.models.product_inventory import ProductInventory
-from app.models.shipment_line import ShipmentLine
+from app.models.product_inventory_lot import ProductInventoryLot
 from app.schemas.inspection_schedule import (
     InspectionScheduleOut,
     InspectionStockLotListOut,
     InspectionStockLotOut,
 )
-from app.services.inventory_fifo_service import get_available_inventory_lots_fifo
+from app.services.inspection_stock_service import InspectionStockContext, get_inspection_stock_context
 
 
 def get_inspection_schedule_detail(
@@ -55,78 +54,27 @@ def list_inspection_stock_lots(
         .limit(1)
     ).scalar_one_or_none()
 
-    inventory_total_qty = int(
-        db.execute(
-            select(func.coalesce(ProductInventory.current_qty, 0)).where(
-                ProductInventory.product_id == current_lot.product_id
-            )
-        ).scalar_one_or_none()
-        or 0
-    )
+    stock = get_inspection_stock_context(db, product_id=current_lot.product_id,
+        order_line_id=current_lot.order_line_id, result_id=current_result_id)
+    return build_inspection_stock_lot_list(db, product_id=current_lot.product_id, stock=stock)
 
-    remaining_display_qty = max(inventory_total_qty, 0)
-    items_by_lot_no: dict[str, InspectionStockLotOut] = {}
 
-    for inventory_lot, stock_qty in get_available_inventory_lots_fifo(
-        db,
-        product_id=current_lot.product_id,
-        exclude_lot_no=current_lot.lot_no,
-        exclude_inspection_result_id=current_result_id,
-    ):
-        if remaining_display_qty <= 0:
-            break
-
-        display_qty = min(stock_qty, remaining_display_qty)
-        if display_qty <= 0:
-            continue
-
-        stock_lot_id = db.execute(
-            select(Lot.lot_id)
-            .where(
-                Lot.product_id == current_lot.product_id,
-                Lot.lot_no == inventory_lot.lot_no,
-            )
-            .limit(1)
-        ).scalar_one_or_none()
-
-        items_by_lot_no[inventory_lot.lot_no] = InspectionStockLotOut(
-            lot_id=stock_lot_id or inventory_lot.product_inventory_lot_id,
-            lot_no=inventory_lot.lot_no,
-            stock_qty=display_qty,
-            allocated_ship_qty=0,
-            created_date=inventory_lot.created_at,
-        )
-        remaining_display_qty -= display_qty
-
-    if current_result_id is not None:
-        current_stock_lines = db.execute(
-            select(ShipmentLine).where(
-                ShipmentLine.inspection_result_id == current_result_id,
-                ShipmentLine.source_type == "STOCK",
-                ShipmentLine.status != "CANCELED",
-            )
-        ).scalars().all()
-
-        for line in current_stock_lines:
-            lot_no = line.stock_lot_no or ""
-            qty = int(line.ship_qty or line.shipped_qty or 0)
-            if not lot_no or qty <= 0:
-                continue
-
-            if lot_no in items_by_lot_no:
-                items_by_lot_no[lot_no].stock_qty += qty
-                continue
-
-            items_by_lot_no[lot_no] = InspectionStockLotOut(
-                lot_id=int(line.lot_id or line.product_inventory_lot_id or 0),
-                lot_no=lot_no,
-                stock_qty=qty,
-                allocated_ship_qty=0,
-                created_date=None,
-            )
-
-    items = list(items_by_lot_no.values())
-    return InspectionStockLotListOut(
-        items=items,
-        total_stock_qty=sum(item.stock_qty for item in items),
-    )
+def build_inspection_stock_lot_list(
+    db: Session, *, product_id: int, stock: InspectionStockContext,
+) -> InspectionStockLotListOut:
+    """Project one captured stock context for both the detail and compatibility endpoint."""
+    production_ids = dict(db.execute(select(Lot.lot_no, Lot.lot_id).join(
+        ProductInventoryLot,
+        (ProductInventoryLot.product_id == Lot.product_id) & (ProductInventoryLot.lot_no == Lot.lot_no),
+    ).where(Lot.product_id == product_id)).all()) if stock.lots else {}
+    items = [InspectionStockLotOut(
+            lot_id=production_ids.get(row.lot.lot_no) or row.lot.product_inventory_lot_id,
+            production_lot_id=production_ids.get(row.lot.lot_no),
+            product_inventory_lot_id=row.lot.product_inventory_lot_id,
+            lot_no=row.lot.lot_no, stock_qty=row.stock_qty,
+            physical_qty=int(row.lot.current_qty), reserved_qty=row.reserved_qty,
+            other_reserved_qty=row.other_reserved_qty,
+            allocated_ship_qty=row.current_shipped_qty, created_date=row.lot.created_at,
+        ) for row in stock.lots]
+    return InspectionStockLotListOut(items=items, total_stock_qty=stock.available_qty,
+        physical_stock_qty=stock.physical_qty, stock_error=stock.error)

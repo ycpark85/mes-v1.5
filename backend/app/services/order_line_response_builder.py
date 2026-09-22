@@ -25,6 +25,7 @@ def build_order_line_out(
         product = db.get(Product, order_line.product_id)
 
     out = OrderLineOut.model_validate(order_line, from_attributes=True)
+    out.shortage_closed = order_line.status == "DONE" and order_line.short_close_state == "CONFIRMED"
     out.partner_name = partner.name if partner else None
     out.product_code = product.product_code if product else None
     out.product_name = product.product_name if product else None

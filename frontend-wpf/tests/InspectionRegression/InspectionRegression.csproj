@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <MesSource>../../Mes.WpfClean/Mes.Wpf/Mes.Wpf</MesSource>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Program.cs" />
+    <Compile Include="PhotoChecks.cs" />
+    <None Include="../../../backend/tests/fixtures/inspection_quantity_cases.json" Link="inspection_quantity_cases.json" CopyToOutputDirectory="PreserveNewest" />
+    <Compile Include="$(MesSource)/Core/common/BindableBase.cs" />
+    <Compile Include="$(MesSource)/Core/common/ViewModelBase.cs" />
+    <Compile Include="$(MesSource)/Core/common/RelayCommand.cs" />
+    <Compile Include="$(MesSource)/Core/common/AsyncRelayCommand.cs" />
+    <Compile Include="$(MesSource)/Core/common/AsyncRelayCommandOfT.cs" />
+    <Compile Include="$(MesSource)/Core/common/AsyncCommandErrors.cs" />
+    <Compile Include="$(MesSource)/Infrastructure/Diagnostics/UiErrorReporter.cs" />
+    <Compile Include="$(MesSource)/Core/Constants/ApiRoutes.cs" />
+    <Compile Include="$(MesSource)/Core/Interfaces/IApiClient.cs" />
+    <Compile Include="$(MesSource)/Core/Interfaces/IMessageService.cs" />
+    <Compile Include="$(MesSource)/Core/Models/ApiResult.cs" />
+    <Compile Include="$(MesSource)/Core/Models/ApiError.cs" />
+    <Compile Include="$(MesSource)/Core/Models/ApiRuntimeInfo.cs" />
+    <Compile Include="$(MesSource)/Core/Configuration/ClientRuntime.cs" />
+    <Compile Include="$(MesSource)/Modules/InspectionSchedules/Dtos/InspectionResultDtos.cs" />
+    <Compile Include="$(MesSource)/Modules/InspectionSchedules/Dtos/InspectionResultDefectTypeLookupDtos.cs" />
+    <Compile Include="$(MesSource)/Modules/InspectionSchedules/ViewModels/InspectionResultWindowViewModel.cs" />
+    <Compile Include="$(MesSource)/Modules/InspectionSchedules/Services/InspectionResultFormPolicy.cs" />
+    <Compile Include="$(MesSource)/Modules/InspectionSchedules/Services/InspectionPhotoService.cs" />
+  </ItemGroup>
+</Project>

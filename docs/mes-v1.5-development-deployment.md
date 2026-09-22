@@ -138,7 +138,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass `
 출력 폴더에는 `Application Files`, `Mes.Wpf.application`, `setup.exe`가 생성된다. 운영 공유 폴더를 먼저 별도 백업한 뒤 `/MIR` 없이 복사한다.
 
 ```powershell
-robocopy C:\mes-v1.5-publish\wpf-1.0.0.34 \\172.30.1.240\mes_wpf /E /R:2 /W:1
+robocopy C:\mes-v1.5-publish\wpf-1.0.0.34 \\MES-SERVER\mes_wpf /E /R:2 /W:1
 ```
 
 ## 보현 외부업체 WPF 배포

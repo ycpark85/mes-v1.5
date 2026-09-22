@@ -71,6 +71,10 @@ def update_order_line_fields(
         raise HTTPException(status_code=404, detail="OrderLine not found")
 
     data = payload.model_dump(exclude_unset=True)
+    if obj.decision_made and any(key in data and data[key] != getattr(obj, key)
+                                 for key in ("partner_id", "product_id")):
+        raise HTTPException(status_code=409,
+            detail="처리계획이 확정된 발주는 거래처·품목을 변경할 수 없습니다. 계획과 예약을 먼저 정리하세요.")
     requested_due_date = data.get("due_date")
 
     if obj.status == OrderLineStatus.OPEN.value:

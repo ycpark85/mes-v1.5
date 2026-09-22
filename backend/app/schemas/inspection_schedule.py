@@ -96,9 +96,15 @@ class InspectionWorkInstructionTargetListOut(BaseModel):
     items: List[InspectionWorkInstructionTargetOut] = Field(default_factory=list)        
 
 class InspectionStockLotOut(BaseModel):
-    lot_id: int
+    lot_id: int = Field(description="Legacy display identifier; use the explicit LOT IDs instead.",
+                        json_schema_extra={"deprecated": True})
+    product_inventory_lot_id: int
+    production_lot_id: Optional[int] = None
     lot_no: str
     stock_qty: int
+    physical_qty: int = 0
+    reserved_qty: int = 0
+    other_reserved_qty: int = 0
     allocated_ship_qty: int = 0
     created_date: Optional[datetime] = None
 
@@ -106,3 +112,5 @@ class InspectionStockLotOut(BaseModel):
 class InspectionStockLotListOut(BaseModel):
     items: List[InspectionStockLotOut] = Field(default_factory=list)
     total_stock_qty: int = 0
+    physical_stock_qty: int = 0
+    stock_error: Optional[str] = None

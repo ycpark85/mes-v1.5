@@ -19,6 +19,7 @@ namespace Mes.Wpf.Modules.Inventories.Views
             if (_viewModel != null)
             {
                 _viewModel.RequestOpenInitialInventoryBulkUpload -= OpenInitialInventoryBulkUploadWindow;
+                _viewModel.RequestOpenAdjustment -= OpenAdjustmentWindow;
             }
 
             _viewModel = e.NewValue as InventoryPageViewModel;
@@ -26,7 +27,13 @@ namespace Mes.Wpf.Modules.Inventories.Views
             if (_viewModel != null)
             {
                 _viewModel.RequestOpenInitialInventoryBulkUpload += OpenInitialInventoryBulkUploadWindow;
+                _viewModel.RequestOpenAdjustment += OpenAdjustmentWindow;
             }
+        }
+
+        private void OpenAdjustmentWindow(InventoryAdjustmentWindowViewModel viewModel)
+        {
+            new InventoryAdjustmentWindow(viewModel) { Owner = Window.GetWindow(this) }.ShowDialog();
         }
 
         private void OpenInitialInventoryBulkUploadWindow(InitialInventoryBulkUploadWindowViewModel viewModel)

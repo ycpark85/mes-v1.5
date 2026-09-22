@@ -23,7 +23,7 @@ class OrderLineChangeLog(Base):
     __tablename__ = "order_line_change_log"
     __table_args__ = (
         CheckConstraint(
-            "change_type IN ('QUANTITY_CHANGE','DUE_DATE_CHANGE','MEMO_CHANGE')",
+            "change_type IN ('QUANTITY_CHANGE','DUE_DATE_CHANGE','MEMO_CHANGE','SHORT_CLOSE')",
             name="ck_order_line_change_log__change_type",
         ),
         Index(

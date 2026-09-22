@@ -43,6 +43,10 @@ class OrderLine(Base):
             "status IN ('OPEN','CLOSED','DONE','CANCELED')",
             name="ck_order_line__status_enum",
         ),
+        CheckConstraint(
+            "short_close_state IN ('NONE','CONFIRMED','REVIEW_REQUIRED')",
+            name="ck_order_line__short_close_state",
+        ),
         Index("ix_order_line__partner_id", "partner_id"),
         Index("ix_order_line__product_id", "product_id"),
         Index("ix_order_line__order_date", "order_date"),
@@ -89,6 +93,9 @@ class OrderLine(Base):
 
     # ✅ 상태/활성/우선순위 (MVP)
     status: Mapped[str] = mapped_column(String(12), nullable=False, default="OPEN")
+    short_close_state: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="NONE", server_default="NONE"
+    )
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     priority: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 

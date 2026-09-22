@@ -13,6 +13,7 @@ from .lot import Lot
 from .lot_step import LotStep
 from .inspection_schedule import InspectionSchedule
 from .inspection_result import InspectionResult
+from .inspection_result_revision import InspectionResultRevision
 from .inspection_defect import InspectionDefect
 from .inspection_defect_attachment import InspectionDefectAttachment
 from .inspection_certificate import InspectionCertificate
@@ -66,6 +67,7 @@ __all__ = [
     "LotStep",
     "InspectionSchedule",
     "InspectionResult",
+    "InspectionResultRevision",
     "InspectionDefect",
     "InspectionDefectAttachment",
     "InspectionCertificate",

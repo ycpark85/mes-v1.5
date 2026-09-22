@@ -110,3 +110,17 @@ def allocate_inventory_lots_fifo(
             break
 
     return allocations, remaining_qty
+
+
+def release_order_stock_reservations(db: Session, order_line) -> None:
+    from app.services.inventory_lock_service import lock_product_inventory
+
+    lock_product_inventory(db, order_line.product_id)
+    lines = db.execute(select(ShipmentLine).where(
+        ShipmentLine.order_line_id == order_line.order_line_id,
+        ShipmentLine.source_type == "STOCK", ShipmentLine.status == "WAITING",
+        ShipmentLine.inspection_result_id.is_(None),
+    ).with_for_update()).scalars().all()
+    for line in lines:
+        line.status = "CANCELED"
+        line.memo = f"{line.memo or ''} / 발주 취소·부족종결로 미사용 예약 해제"

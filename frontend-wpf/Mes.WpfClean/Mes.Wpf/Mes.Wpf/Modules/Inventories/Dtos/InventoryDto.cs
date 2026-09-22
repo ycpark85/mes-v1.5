@@ -1,10 +1,13 @@
 ﻿using System;
 using System.Text.Json.Serialization;
+using Mes.Wpf.Core.Common;
 
 namespace Mes.Wpf.Modules.Inventories.Dtos
 {
-    public class InventoryDto
+    public class InventoryDto : ViewModelBase
     {
+        private long _currentQty;
+        private DateTimeOffset? _updatedAt;
         [JsonPropertyName("product_id")]
         public long ProductId { get; set; }
 
@@ -18,9 +21,18 @@ namespace Mes.Wpf.Modules.Inventories.Dtos
         public string Uom { get; set; } = string.Empty;
 
         [JsonPropertyName("current_qty")]
-        public int CurrentQty { get; set; }
+        public long CurrentQty { get => _currentQty; set => SetProperty(ref _currentQty, value); }
 
         [JsonPropertyName("updated_at")]
-        public DateTime? UpdatedAt { get; set; }
+        public DateTimeOffset? UpdatedAt
+        {
+            get => _updatedAt;
+            set
+            {
+                if (SetProperty(ref _updatedAt, value)) OnPropertyChanged(nameof(LocalUpdatedAt));
+            }
+        }
+
+        public DateTime? LocalUpdatedAt => UpdatedAt?.ToOffset(TimeSpan.FromHours(9)).DateTime;
     }
 }

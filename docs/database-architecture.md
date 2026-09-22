@@ -1,5 +1,25 @@
 # Database Architecture
 
+## Explicit order shortage-close state — 2026-09-14
+
+Migration `6b7c8d9e0f1a` follows `5a6b7c8d9e0f`. `order_line.short_close_state` is NOT NULL, defaults to `NONE`, and a CHECK permits `NONE`, `CONFIRMED`, `REVIEW_REQUIRED`. It represents the current decision independently of editable memo text. No new relationship or index is needed for the existing primary-key and list reads.
+
+The existing `order_line_change_log` CHECK now accepts `SHORT_CLOSE`. Before/after JSON, actor, timestamp and optional reason record explicit service decisions in the same transaction as reservation release and DONE status. A plan-based shortage closure uses its existing `order_line_plan_history.is_short_close` decision record and sets the current state; immutable plan history is not repurposed.
+
+Backfill confirms only DONE orders with `decision_made` and the latest structured shortage-close plan. DONE orders with only the legacy marker become review holds, not invented approvals. No business quantities, old memos or audit rows are rewritten. Runtime status calculations no longer inspect memo markers. Downgrade refuses when new SHORT_CLOSE audit records exist. DDL uses a 5-second lock timeout.
+
+Development migration, `alembic check`, backup restoration and unchanged contents of 11 business tables were verified. Production remains unchanged. Details and backup identity are in [the implementation notes](priority-refactoring-implementation-2026-09-14.md).
+
+## Inspection ownership and audited corrections — 2026-09-10
+
+Migration `5a6b7c8d9e0f` (after `4f5a6b7c8d9e`) adds `inspection_result.shortage_reason`, a self-referencing `settlement_owner_id`, and `settled_sellable_qty`. The owner is the result that settled the source quantity; an independently settled round points to itself. The check constraint requires owner, nonnegative quantity and settlement timestamp together. An index supports lookup of all sources owned by a result.
+
+`inspection_result_revision` retains JSON before/after snapshots, source result, actor and timestamp. Its FK uses RESTRICT. The migration only backfills reconciled and unambiguous historical ownership; it does not alter result quantities, shipments or inventory balances. Unresolved history remains visible but cannot be edited until reviewed. Runtime queries no longer infer carry from ledger differences.
+
+Quantity edits append signed corrections to `product_inventory_movement`. Both positive and negative rows participate in each movement type's net total. Shipment reductions preserve the original allocation record and original shipment time, with the quantity correction recorded in revision history and new ledger rows. Metadata-only/equal-value saves do not recreate stock transactions.
+
+Downgrade refuses to discard newly recorded revisions or final-shortage reasons. See [the implementation and rollout notes](inspection-correction-implementation-2026-09-10.md) for data preflight, compatibility and rollback limits. The production database has not been migrated by this local implementation.
+
 ## SQLAlchemy Metadata Source
 
 The project uses one SQLAlchemy declarative metadata source.

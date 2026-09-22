@@ -1,0 +1,14 @@
+[
+  {"name":"first_round_all_stock","good":100000,"defect_ship":0,"defect":0,"uninspected":0,"stock_ship":0,"production_ship":0,"stock_in":100000,"discard":0,"carry":0,"partial":true,"valid":true},
+  {"name":"second_round_manual_stock_and_production","good":50000,"defect_ship":0,"defect":0,"uninspected":0,"stock_ship":100000,"production_ship":50000,"stock_in":0,"discard":0,"carry":0,"partial":false,"valid":true},
+  {"name":"reported_screenshot","good":432000,"defect_ship":0,"defect":10456,"uninspected":0,"stock_ship":65000,"production_ship":432000,"stock_in":0,"discard":0,"carry":0,"partial":true,"valid":true},
+  {"name":"historical_owned_carry","good":30,"defect_ship":5,"defect":2,"uninspected":0,"stock_ship":0,"production_ship":40,"stock_in":15,"discard":0,"carry":20,"partial":false,"valid":true},
+  {"name":"scrap_and_residual","good":80,"defect_ship":20,"defect":4,"uninspected":0,"stock_ship":15,"production_ship":60,"stock_in":30,"discard":10,"carry":0,"partial":false,"valid":true},
+  {"name":"explicit_final_uninspected","good":50,"defect_ship":0,"defect":2,"uninspected":20,"stock_ship":0,"production_ship":0,"stock_in":50,"discard":0,"carry":0,"partial":false,"valid":true},
+  {"name":"defects_only","good":0,"defect_ship":0,"defect":10,"uninspected":0,"stock_ship":0,"production_ship":0,"stock_in":0,"discard":0,"carry":0,"partial":false,"valid":true},
+  {"name":"all_sellable_discarded","good":30,"defect_ship":0,"defect":0,"uninspected":0,"stock_ship":0,"production_ship":0,"stock_in":0,"discard":30,"carry":0,"partial":true,"valid":true},
+  {"name":"over_allocation","good":20,"defect_ship":0,"defect":0,"uninspected":0,"stock_ship":0,"production_ship":21,"stock_in":0,"discard":0,"carry":0,"partial":false,"valid":false},
+  {"name":"missing_allocation","good":20,"defect_ship":0,"defect":0,"uninspected":0,"stock_ship":0,"production_ship":0,"stock_in":0,"discard":0,"carry":0,"partial":true,"valid":false},
+  {"name":"negative_residual","good":20,"defect_ship":0,"defect":0,"uninspected":0,"stock_ship":0,"production_ship":21,"stock_in":-1,"discard":0,"carry":0,"partial":false,"valid":false},
+  {"name":"negative_stock_shipment","good":20,"defect_ship":0,"defect":0,"uninspected":0,"stock_ship":-1,"production_ship":0,"stock_in":20,"discard":0,"carry":0,"partial":false,"valid":false}
+]

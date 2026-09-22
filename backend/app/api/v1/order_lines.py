@@ -303,9 +303,10 @@ def short_close_order_line(
     order_line_id: int,
     payload: OrderLineShortCloseRequest,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     try:
-        obj = short_close_order_line_status(db, order_line_id, payload)
+        obj = short_close_order_line_status(db, order_line_id, payload, actor=current_user.login_id)
         db.commit()
         db.refresh(obj)
     except HTTPException:
