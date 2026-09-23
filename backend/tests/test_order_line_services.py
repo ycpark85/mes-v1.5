@@ -127,19 +127,19 @@ class OrderLineServicesTests(unittest.TestCase):
         order_line.customer_po = "PO-CUSTOMER-001"
         self.db.commit()
 
-        partial_order_items, _ = list_order_lines_for_grid(
+        partial_order_items, _, _ = list_order_lines_for_grid(
             self.db, page=1, size=20, q="SO-"
         )
-        exact_order_items, _ = list_order_lines_for_grid(
+        exact_order_items, _, _ = list_order_lines_for_grid(
             self.db, page=1, size=20, q=" so-open "
         )
-        partial_po_items, _ = list_order_lines_for_grid(
+        partial_po_items, _, _ = list_order_lines_for_grid(
             self.db, page=1, size=20, q="PO-CUSTOMER"
         )
-        exact_po_items, _ = list_order_lines_for_grid(
+        exact_po_items, _, _ = list_order_lines_for_grid(
             self.db, page=1, size=20, q=" po-customer-001 "
         )
-        partial_product_items, _ = list_order_lines_for_grid(
+        partial_product_items, _, _ = list_order_lines_for_grid(
             self.db, page=1, size=20, q="001"
         )
 
@@ -182,7 +182,7 @@ class OrderLineServicesTests(unittest.TestCase):
         shipment_lines = self.db.execute(
             select(ShipmentLine).where(ShipmentLine.order_line_id == order_line.order_line_id)
         ).scalars().all()
-        items, _ = list_order_lines_for_grid(
+        items, _, _ = list_order_lines_for_grid(
             self.db,
             page=1,
             size=20,

@@ -89,7 +89,8 @@
         </Style>
     </UserControl.Resources>
 
-    <ScrollViewer VerticalScrollBarVisibility="Auto"
+    <ScrollViewer x:Name="PageScroll" IsEnabled="{Binding IsInteractionEnabled}"
+                  VerticalScrollBarVisibility="Auto"
                   HorizontalScrollBarVisibility="Disabled">
         <Grid Background="#F5F7FA"
               Margin="16">
@@ -111,6 +112,7 @@
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="10"/>
                         <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
 
                     <DockPanel Grid.Row="0">
@@ -129,7 +131,39 @@
                         
                     </DockPanel>
 
-                    <Grid Grid.Row="2">
+                    <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,0,0,12"
+                                Visibility="{Binding IsInProgressTab, Converter={StaticResource BoolToVisibilityConverter}}">
+                        <Button Content="{Binding LotCreationButtonText}" Command="{Binding ShowLotCreationQueueCommand}"
+                                Margin="0,0,8,0" ToolTip="재고가 있어 LOT 자동생성을 보류한 발주입니다. 다시 누르면 생산중 전체를 표시합니다.">
+                            <Button.Style>
+                                <Style TargetType="Button" BasedOn="{StaticResource TabButtonStyle}">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsLotCreationQueue}" Value="True">
+                                            <Setter Property="Background" Value="#DBEAFE"/>
+                                            <Setter Property="BorderBrush" Value="#2563EB"/>
+                                            <Setter Property="Foreground" Value="#1D4ED8"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Button.Style>
+                        </Button>
+                        <Button Content="{Binding CloseDecisionButtonText}" Command="{Binding ShowCloseDecisionQueueCommand}"
+                                ToolTip="최종검수·정산 후 출고가 부족하여 재작업 또는 완료 판단이 필요한 발주입니다. 숫자는 전체 대기 건수입니다.">
+                            <Button.Style>
+                                <Style TargetType="Button" BasedOn="{StaticResource TabButtonStyle}">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsCloseDecisionQueue}" Value="True">
+                                            <Setter Property="Background" Value="#DBEAFE"/>
+                                            <Setter Property="BorderBrush" Value="#2563EB"/>
+                                            <Setter Property="Foreground" Value="#1D4ED8"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Button.Style>
+                        </Button>
+                    </StackPanel>
+
+                    <Grid Grid.Row="3">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="80"/>
                             <ColumnDefinition Width="150"/>
@@ -215,7 +249,7 @@
                                    Text="{Binding TotalCountText}"/>    
                     </DockPanel>
 
-                    <DataGrid Grid.Row="2"
+                    <DataGrid x:Name="OrdersGrid" Grid.Row="2"
                               ItemsSource="{Binding Items}"
                               SelectedItem="{Binding SelectedItem, Mode=TwoWay}"
                               AutoGenerateColumns="False"
@@ -272,6 +306,14 @@
                                                 Width="100"
                                                 ElementStyle="{StaticResource GridTextStyle}"/>
 
+                            <DataGridTextColumn Header="상태" Binding="{Binding StatusDisplay}"
+                                                Width="135" ElementStyle="{StaticResource GridTextStyle}"/>
+
+                            <DataGridTextColumn Header="실제 출고" Binding="{Binding AlreadyShippedQty, StringFormat={}{0:N0}}"
+                                                Width="100" ElementStyle="{StaticResource GridTextStyle}"/>
+                            <DataGridTextColumn Header="미출고" Binding="{Binding RemainingShipQty, StringFormat={}{0:N0}}"
+                                                Width="100" ElementStyle="{StaticResource GridTextStyle}"/>
+
                             <DataGridTextColumn Header="생산필요"
                                                 Binding="{Binding PlannedProductionQty, StringFormat={}{0:N0}}"
                                                 Width="100"
@@ -280,11 +322,6 @@
                             <DataGridTextColumn Header="처리구분"
                                                 Binding="{Binding PlanTypeDisplay}"
                                                 Width="150"
-                                                ElementStyle="{StaticResource GridTextStyle}"/>
-
-                            <DataGridTextColumn Header="상태"
-                                                Binding="{Binding Status}"
-                                                Width="90"
                                                 ElementStyle="{StaticResource GridTextStyle}"/>
 
                             <DataGridTextColumn Header="결정"
@@ -321,19 +358,7 @@
             <!-- 액션 영역 -->
             <Border Grid.Row="4"
                     Style="{StaticResource SectionBorderStyle}">
-                <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="Auto"/>
-                    </Grid.ColumnDefinitions>
-
-                    <TextBlock Grid.Column="0"
-                               VerticalAlignment="Center"
-                               Foreground="#6B7280"
-                               Text="선택한 발주의 상세 확인, 기본 LOT 생성, 재작업 LOT 생성을 진행할 수 있습니다."/>
-
-                    <StackPanel Grid.Column="1"
-                                Orientation="Horizontal">
+                <WrapPanel HorizontalAlignment="Right">
                         <Button Style="{StaticResource PrimaryButtonStyle}"
                                 Margin="0,0,8,0"
                                 Content="수주상세"
@@ -353,10 +378,18 @@
                                 Command="{Binding CreateBaseLotCommand}"/>
 
                         <Button Style="{StaticResource PrimaryButtonStyle}"
+                                Margin="0,0,8,0"
                                 Content="{Binding LotActionButtonText}"
                                 Command="{Binding OpenLotActionCommand}"/>
-                    </StackPanel>
-                </Grid>
+                        <Button Style="{StaticResource PrimaryButtonStyle}"
+                                Content="현재 실적으로 완료" IsEnabled="{Binding CanShortClose}"
+                                Visibility="{Binding IsInProgressTab, Converter={StaticResource BoolToVisibilityConverter}}"
+                                Command="{Binding ShortCloseCommand}"/>
+                        <Button Style="{StaticResource PrimaryButtonStyle}"
+                                Content="완료 취소" IsEnabled="{Binding CanReopen}"
+                                Visibility="{Binding IsCompletedTab, Converter={StaticResource BoolToVisibilityConverter}}"
+                                Command="{Binding ReopenCommand}"/>
+                </WrapPanel>
             </Border>
 
             <!-- 자동 처리계획 -->
@@ -409,7 +442,7 @@
                                 Style="{StaticResource SubSectionBorderStyle}">
                             <StackPanel>
                                 <TextBlock Style="{StaticResource LabelTextStyle}"
-                                           Text="재고사용예정"/>
+                                           Text="계획 재고사용"/>
                                 <TextBlock Margin="0,6,0,0"
                                            FontSize="17"
                                            FontWeight="SemiBold"
@@ -420,7 +453,7 @@
                         <Border Style="{StaticResource SubSectionBorderStyle}">
                             <StackPanel>
                                 <TextBlock Style="{StaticResource LabelTextStyle}"
-                                           Text="생산필요수량"/>
+                                           Text="계획 생산수량"/>
                                 <TextBlock Margin="0,6,0,0"
                                            FontSize="17"
                                            FontWeight="SemiBold"

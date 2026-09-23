@@ -10,6 +10,9 @@ namespace Mes.Wpf.Modules.OrderLineList.Dtos
 
         [JsonPropertyName("meta")]
         public OrderLineListMetaDto Meta { get; set; } = new();
+
+        [JsonPropertyName("queue_counts")]
+        public Dictionary<string, int>? QueueCounts { get; set; }
     }
 
     public class OrderLineListMetaDto

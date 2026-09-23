@@ -102,6 +102,7 @@ class OrderLineOut(OrderLineBase):
     recommended_fulfillment_mode: Optional[OrderLineFulfillmentMode] = None
     recommended_production_qty: int = 0
     planned_production_qty: int = 0
+    planned_stock_ship_qty: int = 0
     decision_required: bool = False
     allowed_plan_types: List[OrderLinePlanType] = Field(default_factory=list)
 
@@ -114,6 +115,9 @@ class OrderLineOut(OrderLineBase):
     needs_shortage_action: bool = False
     shortage_closed: bool = False
     short_close_state: Literal["NONE", "CONFIRMED", "REVIEW_REQUIRED"] = "NONE"
+    lot_creation_deferred: bool = False
+    manual_closed: bool = False
+    work_queue: Optional[Literal["LOT_CREATION", "CLOSE_DECISION"]] = None
 
     
 
@@ -126,6 +130,8 @@ class PageMeta(BaseModel):
 class OrderLineListOut(BaseModel):
     items: List[OrderLineOut]
     meta: PageMeta
+    # null means not evaluated (completed-only list); zero means evaluated and empty.
+    queue_counts: Optional[dict[str, int]] = None
 
 #발주등록 벌크 등록
 
@@ -270,3 +276,6 @@ class OrderLineBaseLotCreateResult(BaseModel):
 
 class OrderLineShortCloseRequest(BaseModel):
     memo: Optional[str] = None
+    expected_updated_at: Optional[datetime] = None
+    expected_ship_target_qty: Optional[int] = Field(None, ge=0)
+    expected_shipped_qty: Optional[int] = Field(None, ge=0)

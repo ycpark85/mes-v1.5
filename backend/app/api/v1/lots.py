@@ -9,6 +9,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
+from app.core.auth import get_current_user
+from app.models.user import User
 from app.services.lot_query import get_lot_detail, list_lots as list_lots_query
 from app.services.lot_rework_service import create_rework_lot
 from app.services.lot_trace_query import get_lot_trace_detail_for_lot
@@ -24,9 +26,9 @@ router = APIRouter(prefix="/lots", tags=["Lot"])
 
 
 @router.post("", response_model=LotDetailOut, status_code=http_status.HTTP_201_CREATED)
-def create_lot(payload: LotCreate, db: Session = Depends(get_db)):
+def create_lot(payload: LotCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     try:
-        result = create_rework_lot(db, payload)
+        result = create_rework_lot(db, payload, actor=current_user.login_id)
         db.commit()
     except HTTPException:
         db.rollback()

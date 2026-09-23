@@ -4,8 +4,8 @@ from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.crud.order_line import order_line_crud
 from app.models.lot import Lot
+from app.models.order_line import OrderLine
 from app.models.partner import Partner
 from app.schemas.order_line import OrderLineBaseLotCreateResult, OrderLineStatus
 from app.services.order_line_creation_service import (
@@ -19,7 +19,8 @@ from app.services.order_line_plan_service import (
 
 
 def create_base_lot_from_plan(db: Session, order_line_id: int) -> OrderLineBaseLotCreateResult:
-    order_line = order_line_crud.get(db, order_line_id)
+    order_line = db.execute(select(OrderLine).where(OrderLine.order_line_id == order_line_id)
+        .with_for_update().execution_options(populate_existing=True)).scalar_one_or_none()
     if not order_line or not order_line.is_active:
         raise HTTPException(status_code=404, detail="OrderLine not found")
 

@@ -93,6 +93,9 @@ namespace Mes.Wpf.Modules.OrderLineList.Dtos
         [JsonPropertyName("planned_production_qty")]
         public int PlannedProductionQty { get; set; }
 
+        [JsonPropertyName("planned_stock_ship_qty")]
+        public int PlannedStockShipQty { get; set; }
+
         [JsonPropertyName("decision_required")]
         public bool DecisionRequired { get; set; }
 
@@ -126,6 +129,17 @@ namespace Mes.Wpf.Modules.OrderLineList.Dtos
         [JsonPropertyName("short_close_state")]
         public string ShortCloseState { get; set; } = "NONE";
 
+        [JsonPropertyName("manual_closed")]
+        public bool ManualClosed { get; set; }
+
+        [JsonPropertyName("work_queue")]
+        public string? WorkQueue { get; set; }
+
+        [JsonPropertyName("updated_at")]
+        public DateTimeOffset? UpdatedAt { get; set; }
+
+        public string DecisionStatusDisplay => DecisionMade ? "결정완료" : "결정필요";
+
         [JsonPropertyName("plan_type")]
         public string? PlanType { get; set; }
 
@@ -138,7 +152,9 @@ namespace Mes.Wpf.Modules.OrderLineList.Dtos
         public string StatusDisplay => Status switch
         {
             "OPEN" => "LOT 생성대기",
+            "CLOSED" when WorkQueue == "CLOSE_DECISION" => "종료판단대기",
             "CLOSED" => "생산중",
+            "DONE" when ManualClosed => "완료(수동)",
             "DONE" when ShortCloseState == "REVIEW_REQUIRED" => "완료(종료 확인 필요)",
             "DONE" => "완료",
             "CANCELED" => "취소",
@@ -175,6 +191,8 @@ namespace Mes.Wpf.Modules.OrderLineList.Dtos
             {
                 if (ShortCloseState == "REVIEW_REQUIRED")
                     return "과거 부족종료 확인 필요";
+                if (ManualClosed)
+                    return "완료(수동)";
                 if (ShortageClosed)
                 {
                     return "부족종료";
@@ -182,7 +200,7 @@ namespace Mes.Wpf.Modules.OrderLineList.Dtos
 
                 if (NeedsShortageAction)
                 {
-                    return "부족처리필요";
+                    return "종료판단대기";
                 }
 
                 return "-";

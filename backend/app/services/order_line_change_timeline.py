@@ -118,9 +118,15 @@ def _build_timeline_event(
             f"{_format_text(change_log.after_data.get('memo'))}"
         )
     elif change_log.change_type == ORDER_LINE_SHORT_CLOSE:
-        title = "발주 부족종료"
-        event_type = "ORDER_SHORT_CLOSED"
-        summary = f"잔여 출고량 {_to_int(change_log.after_data.get('remaining_ship_qty')):,} {uom} 부족종료"
+        action = change_log.after_data.get("action")
+        if action in ("MANUAL_REOPEN", "REWORK_REOPEN"):
+            title = "수동완료 취소" if action == "MANUAL_REOPEN" else "재작업으로 발주 재개"
+            event_type = "ORDER_REOPENED"
+            summary = "종료 결정을 해제했습니다. 기존 수량과 처리 이력은 유지됩니다."
+        else:
+            title = "현재 실적으로 완료" if action == "MANUAL_CLOSE" else "발주 부족종료"
+            event_type = "ORDER_SHORT_CLOSED"
+            summary = f"미출고 {_to_int(change_log.after_data.get('remaining_ship_qty')):,} {uom}을 남기고 종료"
     else:
         raise ValueError(f"Unsupported order-line change type: {change_log.change_type}")
 

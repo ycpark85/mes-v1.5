@@ -306,6 +306,7 @@ def create_order_line_with_policy(db: Session, payload: OrderLineCreate) -> Orde
     )
 
     obj.fulfillment_mode = policy.recommended_fulfillment_mode
+    obj.lot_creation_deferred = True
     obj.production_policy = OrderLineProductionPolicy.ORDER_ONLY.value
     obj.extra_production_qty = 0
     obj.decision_made = False

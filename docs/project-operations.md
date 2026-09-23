@@ -1,5 +1,17 @@
 # Project Operations
 
+## Order work queue upload for server deployment — 2026-09-23
+
+- [Upload scope, verification and deployment requirements](github-upload-preparation-2026-09-23.md) records the order work queues, manual completion and list-query optimization uploaded to `codex/prepare-server-deployment-20260922`, starting from deployed commit `50654e1`.
+- The next server deployment needs migration `7c8d9e0f1a2b` and the API/WPF changes together. Source upload does not apply the migration, replace the production client or merge main.
+
+## Order work queues and manual completion — 2026-09-22
+
+- Production-in-progress now has `LOT 생성 대기` and `종료판단대기` buttons with all-page counts. Stock-deferred origin, final-settlement evidence, active work and the existing shipment target determine membership; LOT plan quantity does not substitute for shipment fulfillment.
+- `현재 실적으로 완료` and `완료 취소` record an explicit audited decision without changing actual quantities. Rework reopens the order and clears the current close decision. Only the order's unused stock reservations are released; reopening does not recreate them.
+- Completed rows display `완료(수동)`. Actions refresh counts and affected rows in the same page while preserving filter, page and scroll. [Definitions, changed files, migration and validation](order-work-queues-2026-09-22.md) are the current reference for these actions.
+- Queue classification is evaluated once per list statement and shared by filtered rows, filtered totals and global badges. Completed-only lists omit queue calculation (`queue_counts: null`); WPF distinguishes unread counts from zero and reloads them on return to production. Write-time eligibility checks remain fresh. Deploy the API and WPF changes together; this optimization needs no schema change. [Measurements and regression results](order-work-queue-performance-2026-09-22.md#후속-최적화-결과).
+
 ## GitHub deployment preparation — 2026-09-22
 
 - [Upload scope and verification](github-upload-preparation-2026-09-22.md) records the accumulated development changes prepared on `codex/prepare-server-deployment-20260922` for `ycpark85/mes-v1.5`.

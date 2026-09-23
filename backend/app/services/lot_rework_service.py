@@ -19,11 +19,14 @@ from app.models.product import Product
 from app.models.routing_template_step import RoutingTemplateStep
 from app.schemas.lot import LotCreate, LotDetailOut
 from app.services.production_daily_query import refresh_order_line_snapshot
+from app.services.order_line_manual_close_service import reopen_order_for_rework
 
 
 def create_rework_lot(
     db: Session,
     payload: LotCreate,
+    *,
+    actor: str = "system",
 ) -> LotDetailOut:
     order_line = _ensure_order_line(db, payload.order_line_id)
     product = _ensure_active_product(db, order_line.product_id)
@@ -42,9 +45,6 @@ def create_rework_lot(
     parent = _ensure_parent_lot(db, parent_lot_id)
     _validate_rework_parent(order_line, parent)
 
-    if order_line.status == "DONE":
-        order_line.status = "CLOSED"
-
     lot = _create_lot_with_retry(
         db,
         order_line=order_line,
@@ -58,6 +58,7 @@ def create_rework_lot(
         memo=payload.memo,
     )
 
+    reopen_order_for_rework(db, order_line, lot_id=lot.lot_id, actor=actor)
     refresh_order_line_snapshot(db, order_line.order_line_id)
     db.flush()
 
@@ -96,16 +97,13 @@ def _create_lot_with_retry(
         )
 
         try:
-            lot_crud.create(db, lot)
-            _create_lot_steps_from_routing(db, lot.lot_id, product.routing_template_id)
-            db.flush()
+            with db.begin_nested():
+                lot_crud.create(db, lot)
+                _create_lot_steps_from_routing(db, lot.lot_id, product.routing_template_id)
+                db.flush()
             return lot
         except IntegrityError:
-            db.rollback()
-            order_line = _ensure_order_line(db, order_line.order_line_id)
-            if order_line.status == "DONE":
-                order_line.status = "CLOSED"
-            product = _ensure_active_product(db, product.product_id)
+            continue
 
     raise HTTPException(status_code=409, detail="Failed to generate unique lot_no (retry exceeded)")
 
@@ -176,9 +174,12 @@ def _generate_lot_no(db: Session, created_date: date, e_fixed: str = "E") -> str
 
 
 def _ensure_order_line(db: Session, order_line_id: int) -> OrderLine:
-    order_line = db.get(OrderLine, order_line_id)
+    order_line = db.execute(select(OrderLine).where(OrderLine.order_line_id == order_line_id)
+        .with_for_update().execution_options(populate_existing=True)).scalar_one_or_none()
     if not order_line or not order_line.is_active:
         raise HTTPException(status_code=404, detail="OrderLine not found or inactive")
+    if order_line.status == "CANCELED":
+        raise HTTPException(status_code=409, detail="취소된 발주에는 재작업 LOT를 생성할 수 없습니다.")
     return order_line
 
 

@@ -71,6 +71,22 @@ def calculate_ship_qty(partner_name: str, order_qty: int) -> int:
     return math.ceil(order_qty * 1.02)
 
 
+def ship_target_sql(partner_name, order_qty):
+    """Read-only SQL equivalent of calculate_ship_qty, for filtering before pagination."""
+    from sqlalchemy import Float, Integer, case, cast, func, or_
+
+    normalized = func.coalesce(partner_name, "")
+    for token in ("주식회사", "(주)", "㈜"):
+        normalized = func.replace(normalized, token, "")
+    for token in "\t\n\v\f\r\x1c\x1d\x1e\x1f \x85\xa0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000":
+        normalized = func.replace(normalized, token, "")
+    return case(
+        (or_(*(normalized.contains(keyword) for keyword in DIRECT_SHIP_KEYWORDS)), order_qty),
+        (normalized.contains(CAREGEN_KEYWORD), order_qty + 100),
+        else_=cast(func.ceil(cast(order_qty, Float) * 1.02), Integer),
+    )
+
+
 def build_shipment_progress(
     *,
     ship_target_qty: int,

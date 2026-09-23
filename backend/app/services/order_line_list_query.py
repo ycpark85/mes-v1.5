@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date
 from typing import Optional, Tuple, List
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import case, func, literal, or_, select, true
 from sqlalchemy.orm import Session
 
 from app.models.drawing import Drawing
@@ -18,6 +18,7 @@ from app.models.shipment_line import ShipmentLine
 from app.services.order_line_display import to_plan_type_display
 from app.services.order_line_plan_policy import evaluate_order_line_plan_policy
 from app.services.order_fulfillment_policy import resolve_ship_target_qty
+from app.services.order_line_work_queue import work_queue_expressions
 
 
 def list_order_lines_for_grid(
@@ -28,6 +29,7 @@ def list_order_lines_for_grid(
     q: Optional[str] = None,
     status: Optional[str] = None,
     status_group: Optional[str] = None,
+    work_queue: Optional[str] = None,
     is_active: Optional[bool] = True,
     partner_id: Optional[int] = None,
     product_id: Optional[int] = None,
@@ -35,7 +37,34 @@ def list_order_lines_for_grid(
     order_date_to: Optional[date] = None,
     due_date_from: Optional[date] = None,
     due_date_to: Optional[date] = None,
-) -> Tuple[List[dict], int]:
+) -> Tuple[List[dict], int, Optional[dict[str, int]]]:
+    normalized_group = (status_group or "").strip().upper()
+    completed_only = normalized_group == "COMPLETED" or (not status_group and status in ("DONE", "CANCELED"))
+    queue_rows = None
+    if completed_only:
+        lot_wait, close_wait = literal(False), literal(False)
+    else:
+        lot_wait, close_wait = work_queue_expressions()
+        # Reuse one evaluation for global badges, filtered totals, and page rows.
+        # This is statement-local, so a later read or write always checks fresh data.
+        queue_rows = (
+            select(OrderLine.order_line_id, lot_wait.label("lot_wait"), close_wait.label("close_wait"))
+            .where(OrderLine.is_active.is_(True), OrderLine.status.in_(("OPEN", "CLOSED")))
+            .cte("order_work_queues")
+            .prefix_with("MATERIALIZED", dialect="postgresql")
+        )
+        lot_wait = func.coalesce(queue_rows.c.lot_wait, False)
+        close_wait = func.coalesce(queue_rows.c.close_wait, False)
+
+    filtered = (
+        select(OrderLine.order_line_id, OrderLine.due_date, OrderLine.order_no, OrderLine.line_no,
+               lot_wait.label("lot_wait"), close_wait.label("close_wait"))
+        .join(Partner, Partner.partner_id == OrderLine.partner_id)
+        .join(Product, Product.product_id == OrderLine.product_id)
+        .outerjoin(Drawing, Drawing.drawing_id == Product.drawing_id)
+    )
+    if queue_rows is not None:
+        filtered = filtered.outerjoin(queue_rows, queue_rows.c.order_line_id == OrderLine.order_line_id)
     lot_agg_sq = (
         select(
             Lot.order_line_id.label("order_line_id"),
@@ -58,39 +87,23 @@ def list_order_lines_for_grid(
         .subquery()
     )
 
-    stmt = (
-        select(
-            OrderLine,
-            Partner.name.label("partner_name"),
-            Product.product_code.label("product_code"),
-            Product.product_name.label("product_name"),
-            Drawing.drawing_no.label("drawing_no"),
-            func.coalesce(ProductInventory.current_qty, 0).label("current_qty"),
-            func.coalesce(reserved_inventory_sq.c.reserved_qty, 0).label("reserved_qty"),
-            func.coalesce(lot_agg_sq.c.lot_count, 0).label("lot_count"),
-        )
-        .join(Partner, Partner.partner_id == OrderLine.partner_id)
-        .join(Product, Product.product_id == OrderLine.product_id)
-        .outerjoin(Drawing, Drawing.drawing_id == Product.drawing_id)
-        .outerjoin(ProductInventory, ProductInventory.product_id == OrderLine.product_id)
-        .outerjoin(reserved_inventory_sq, reserved_inventory_sq.c.product_id == Product.product_id)
-        .outerjoin(lot_agg_sq, lot_agg_sq.c.order_line_id == OrderLine.order_line_id)
-    )
-
     conds = []
 
     if is_active is not None:
         conds.append(OrderLine.is_active == is_active)
 
     if status_group:
-        normalized_group = status_group.strip().upper()
-
         if normalized_group == "IN_PROGRESS":
             conds.append(OrderLine.status.in_(["OPEN", "CLOSED"]))
         elif normalized_group == "COMPLETED":
             conds.append(OrderLine.status.in_(["DONE", "CANCELED"]))
     elif status:
         conds.append(OrderLine.status == status)
+
+    if work_queue == "LOT_CREATION":
+        conds.append(lot_wait)
+    elif work_queue == "CLOSE_DECISION":
+        conds.append(close_wait)
 
     if partner_id:
         conds.append(OrderLine.partner_id == partner_id)
@@ -127,30 +140,54 @@ def list_order_lines_for_grid(
         )
 
     if conds:
-        stmt = stmt.where(*conds)
-
-    count_stmt = (
-        select(func.count())
-        .select_from(OrderLine)
-        .join(Partner, Partner.partner_id == OrderLine.partner_id)
-        .join(Product, Product.product_id == OrderLine.product_id)
+        filtered = filtered.where(*conds)
+    filtered = filtered.cte("filtered_orders")
+    total_query = select(func.count()).select_from(filtered).scalar_subquery()
+    if queue_rows is None:
+        summary = select(total_query.label("total"), literal(None).label("lot_creation_count"),
+                         literal(None).label("close_decision_count")).cte("order_summary")
+    else:
+        summary = select(
+            total_query.label("total"),
+            func.coalesce(func.sum(case((queue_rows.c.lot_wait, 1), else_=0)), 0).label("lot_creation_count"),
+            func.coalesce(func.sum(case((queue_rows.c.close_wait, 1), else_=0)), 0).label("close_decision_count"),
+        ).select_from(queue_rows).cte("order_summary")
+    page_rows = (
+        select(filtered).order_by(filtered.c.due_date, filtered.c.order_no, filtered.c.line_no)
+        .offset((page - 1) * size).limit(size).cte("order_page")
+    )
+    stmt = (
+        select(
+            OrderLine,
+            Partner.name.label("partner_name"),
+            Product.product_code.label("product_code"),
+            Product.product_name.label("product_name"),
+            Drawing.drawing_no.label("drawing_no"),
+            func.coalesce(ProductInventory.current_qty, 0).label("current_qty"),
+            func.coalesce(reserved_inventory_sq.c.reserved_qty, 0).label("reserved_qty"),
+            func.coalesce(lot_agg_sq.c.lot_count, 0).label("lot_count"),
+            page_rows.c.lot_wait, page_rows.c.close_wait,
+            summary.c.total, summary.c.lot_creation_count, summary.c.close_decision_count,
+        )
+        .select_from(summary)
+        # Keep the summary even when the search or requested page is empty.
+        .outerjoin(page_rows, true())
+        .outerjoin(OrderLine, OrderLine.order_line_id == page_rows.c.order_line_id)
+        .outerjoin(Partner, Partner.partner_id == OrderLine.partner_id)
+        .outerjoin(Product, Product.product_id == OrderLine.product_id)
         .outerjoin(Drawing, Drawing.drawing_id == Product.drawing_id)
+        .outerjoin(ProductInventory, ProductInventory.product_id == OrderLine.product_id)
+        .outerjoin(reserved_inventory_sq, reserved_inventory_sq.c.product_id == Product.product_id)
+        .outerjoin(lot_agg_sq, lot_agg_sq.c.order_line_id == OrderLine.order_line_id)
+        .order_by(page_rows.c.due_date, page_rows.c.order_no, page_rows.c.line_no)
     )
-
-    if conds:
-        count_stmt = count_stmt.where(*conds)
-
-    total = db.execute(count_stmt).scalar_one()
-
-    stmt = stmt.order_by(
-        OrderLine.due_date.asc(),
-        OrderLine.order_no.asc(),
-        OrderLine.line_no.asc(),
-    )
-
-    stmt = stmt.offset((page - 1) * size).limit(size)
-
-    rows = db.execute(stmt).all()
+    result = db.execute(stmt).all()
+    total = int(result[0].total)
+    queue_counts = None if completed_only else {
+        "lot_creation": int(result[0].lot_creation_count),
+        "close_decision": int(result[0].close_decision_count),
+    }
+    rows = [row[:-3] for row in result if row[0] is not None]
     order_line_ids = [row[0].order_line_id for row in rows]
 
     latest_plan_history_map: dict[int, OrderLinePlanHistory] = {}
@@ -205,6 +242,8 @@ def list_order_lines_for_grid(
         current_qty,
         reserved_qty,
         lot_count,
+        is_lot_wait,
+        is_close_wait,
     ) in rows:
         lot_count_int = int(lot_count or 0)
         available_inventory_qty = max(int(current_qty or 0) - int(reserved_qty or 0), 0)
@@ -239,7 +278,7 @@ def list_order_lines_for_grid(
         recommended_production_qty = plan_policy.recommended_production_qty
 
         planned_production_qty = base_planned_production_qty + extra_production_qty
-        if plan_type == "STOCK_REPLENISHMENT" and latest_plan_history is not None:
+        if ol.decision_made and latest_plan_history is not None:
             planned_production_qty = int(latest_plan_history.production_qty or 0)
 
         if saved_policy == "INVENTORY_ONLY_CLOSE":
@@ -255,12 +294,7 @@ def list_order_lines_for_grid(
 
         remaining_ship_qty = max(ship_target_qty - already_shipped_qty, 0)
 
-        needs_shortage_action = (
-            ol.status == "CLOSED"
-            and remaining_ship_qty > 0
-            and (ol.production_policy or "") != "INVENTORY_ONLY_CLOSE"
-            and lot_count_int > 0
-        )
+        needs_shortage_action = bool(is_close_wait)
 
         shortage_closed = ol.status == "DONE" and ol.short_close_state == "CONFIRMED"
         expected_short_qty = max(target_ship_qty - expected_ship_qty, 0)
@@ -268,13 +302,15 @@ def list_order_lines_for_grid(
             not bool(ol.decision_made)
             and ol.status == "OPEN"
             and lot_count_int == 0
-            and bool(plan_policy.allowed_plan_types)
+            and (bool(plan_policy.allowed_plan_types) or ol.lot_creation_deferred)
         )
         allowed_plan_types = (
             [plan_type.value for plan_type in plan_policy.allowed_plan_types]
             if decision_required
             else []
         )
+        if decision_required and not allowed_plan_types and ol.lot_creation_deferred:
+            allowed_plan_types = ["AUTO_PRODUCTION"]
 
         items.append(
             {
@@ -313,6 +349,7 @@ def list_order_lines_for_grid(
                 "recommended_fulfillment_mode": recommended_mode,
                 "recommended_production_qty": recommended_production_qty,
                 "planned_production_qty": planned_production_qty,
+                "planned_stock_ship_qty": int(latest_plan_history.stock_ship_qty or 0) if ol.decision_made and latest_plan_history else 0,
                 "decision_required": decision_required,
                 "allowed_plan_types": allowed_plan_types,
                 "expected_ship_qty": expected_ship_qty,
@@ -323,7 +360,10 @@ def list_order_lines_for_grid(
                 "needs_shortage_action": needs_shortage_action,
                 "shortage_closed": shortage_closed,
                 "short_close_state": ol.short_close_state,
+                "lot_creation_deferred": ol.lot_creation_deferred,
+                "manual_closed": ol.manual_closed,
+                "work_queue": "LOT_CREATION" if is_lot_wait else "CLOSE_DECISION" if is_close_wait else None,
             }
         )
 
-    return items, total
+    return items, total, queue_counts

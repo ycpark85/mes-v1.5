@@ -473,8 +473,6 @@ namespace Mes.Wpf.Views.Shell
             await vm.InitializeAsync(item.OrderLineId);
 
             window.ShowDialog();
-
-            await OpenOrderLineListAsync();
         }
 
         private async void LotProcess_Click(object sender, RoutedEventArgs e)

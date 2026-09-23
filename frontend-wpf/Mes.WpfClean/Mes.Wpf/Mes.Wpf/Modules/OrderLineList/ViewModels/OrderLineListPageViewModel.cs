@@ -41,6 +41,57 @@ namespace Mes.Wpf.Modules.OrderLineList.ViewModels
         private string _selectedPlanType = string.Empty;
         private string _planMemo = string.Empty;
         private bool _canConfirmPlan;
+        private string? _selectedWorkQueue;
+        private int? _lotCreationCount;
+        private int? _closeDecisionCount;
+        private bool _isWorking;
+        private bool _preserveRows;
+
+        public event Action? ItemsRefreshing;
+        public event Action? ItemsRefreshed;
+        public bool IsInteractionEnabled => !_isWorking;
+        public bool IsLotCreationQueue => _selectedWorkQueue == "LOT_CREATION";
+        public bool IsCloseDecisionQueue => _selectedWorkQueue == "CLOSE_DECISION";
+        public string LotCreationButtonText => $"LOT 생성 대기 ({(_lotCreationCount is int count ? count.ToString("N0") : "미조회")})";
+        public string CloseDecisionButtonText => $"종료판단대기 ({(_closeDecisionCount is int count ? count.ToString("N0") : "미조회")})";
+        public bool CanReopen => IsCompletedTab && SelectedItem?.ManualClosed == true;
+
+        private readonly List<AsyncRelayCommand> _commands = new();
+        private AsyncRelayCommand BusyCommand(Func<Task> action, Func<bool>? canExecute = null)
+        {
+            var command = new AsyncRelayCommand(() => RunBusyAsync(action), () => !_isWorking && (canExecute?.Invoke() ?? true));
+            _commands.Add(command);
+            return command;
+        }
+
+        private async Task RunBusyAsync(Func<Task> action)
+        {
+            if (_isWorking) return;
+            _isWorking = true;
+            OnPropertyChanged(nameof(IsInteractionEnabled));
+            try { await action(); }
+            finally
+            {
+                _isWorking = false;
+                OnPropertyChanged(nameof(IsInteractionEnabled));
+                foreach (var command in _commands) command.RaiseCanExecuteChanged();
+            }
+        }
+
+        private void SetWorkQueue(string? value)
+        {
+            _selectedWorkQueue = value;
+            OnPropertyChanged(nameof(IsLotCreationQueue));
+            OnPropertyChanged(nameof(IsCloseDecisionQueue));
+        }
+
+        private async Task ToggleWorkQueueAsync(string queue)
+        {
+            SetWorkQueue(_selectedWorkQueue == queue ? null : queue);
+            Page = 1;
+            SelectedItem = null;
+            await SearchAsync();
+        }
 
         public OrderLineListPageViewModel(
             IApiClient apiClient,
@@ -56,39 +107,42 @@ namespace Mes.Wpf.Modules.OrderLineList.ViewModels
             Items = new ObservableCollection<OrderLineListItemDto>();
             PlanOptions = new ObservableCollection<KeyValuePair<string, string>>();
 
-            SearchOrderLinesCommand = new AsyncRelayCommand(async () =>
+            SearchOrderLinesCommand = BusyCommand(async () =>
             {
                 Page = 1;
                 await SearchAsync();
             });
 
-            ResetOrderLineSearchCommand = new AsyncRelayCommand(async () =>
+            ResetOrderLineSearchCommand = BusyCommand(async () =>
             {
                 Reset();
                 await SearchAsync();
             });
 
-            ShowInProgressCommand = new AsyncRelayCommand(async () =>
+            ShowInProgressCommand = BusyCommand(async () =>
             {
                 await ChangeProductionTabAsync(ProductionTabInProgress);
             });
 
-            ShowCompletedCommand = new AsyncRelayCommand(async () =>
+            ShowCompletedCommand = BusyCommand(async () =>
             {
                 await ChangeProductionTabAsync(ProductionTabCompleted);
             });
 
-            CreateBaseLotCommand = new AsyncRelayCommand(CreateBaseLotAsync);
-            ShortCloseCommand = new AsyncRelayCommand(ShortCloseAsync);
-            ConfirmPlanCommand = new AsyncRelayCommand(ConfirmPlanAsync);
-            OpenOrderDetailCommand = new AsyncRelayCommand(OpenOrderDetailAsync);
-            OpenLotActionCommand = new AsyncRelayCommand(OpenLotActionAsync);
-            DeleteOrderGroupCommand = new AsyncRelayCommand(DeleteOrderGroupAsync);
-            PreviousPageCommand = new AsyncRelayCommand(
+            CreateBaseLotCommand = BusyCommand(CreateBaseLotAsync);
+            ShortCloseCommand = BusyCommand(ShortCloseAsync);
+            ReopenCommand = BusyCommand(ReopenAsync);
+            ShowLotCreationQueueCommand = BusyCommand(() => ToggleWorkQueueAsync("LOT_CREATION"));
+            ShowCloseDecisionQueueCommand = BusyCommand(() => ToggleWorkQueueAsync("CLOSE_DECISION"));
+            ConfirmPlanCommand = BusyCommand(ConfirmPlanAsync);
+            OpenOrderDetailCommand = BusyCommand(OpenOrderDetailAsync);
+            OpenLotActionCommand = BusyCommand(OpenLotActionAsync);
+            DeleteOrderGroupCommand = BusyCommand(DeleteOrderGroupAsync);
+            PreviousPageCommand = BusyCommand(
                 GoPreviousPageAsync,
                 () => CanGoPreviousPage);
 
-            NextPageCommand = new AsyncRelayCommand(
+            NextPageCommand = BusyCommand(
                 GoNextPageAsync,
                 () => CanGoNextPage);
 
@@ -106,6 +160,9 @@ namespace Mes.Wpf.Modules.OrderLineList.ViewModels
 
         public AsyncRelayCommand CreateBaseLotCommand { get; }
         public AsyncRelayCommand ShortCloseCommand { get; }
+        public AsyncRelayCommand ReopenCommand { get; }
+        public AsyncRelayCommand ShowLotCreationQueueCommand { get; }
+        public AsyncRelayCommand ShowCloseDecisionQueueCommand { get; }
 
         public AsyncRelayCommand OpenOrderDetailCommand { get; }
         public AsyncRelayCommand OpenLotActionCommand { get; }
@@ -284,6 +341,9 @@ namespace Mes.Wpf.Modules.OrderLineList.ViewModels
                     return "0";
                 }
 
+                if (SelectedItem.DecisionMade)
+                    return $"{SelectedItem.PlannedStockShipQty:N0}";
+
                 var qty = Math.Min(
                     Math.Max(SelectedItem.AvailableInventoryQty, 0),
                     Math.Max(SelectedItem.ShipTargetQty, 0));
@@ -359,17 +419,23 @@ namespace Mes.Wpf.Modules.OrderLineList.ViewModels
 
         public async Task InitializeAsync()
         {
-            await SearchAsync();
+            await RunBusyAsync(SearchAsync);
         }
 
         protected override async Task<bool> LoadListAsync()
         {
+            SetQueueCounts(null);
             var route = BuildListUrl();
 
             var result = await _apiClient.GetAsync<OrderLineListResponse>(route);
 
             if (!result.Success || result.Data == null)
             {
+                if (_preserveRows)
+                {
+                    _messageService.ShowError(result.Message ?? "처리는 완료되었지만 목록 갱신에 실패했습니다. 다시 조회하세요.");
+                    return false;
+                }
                 Items.Clear();
                 Total = 0;
                 CanGoPreviousPage = false;
@@ -385,12 +451,14 @@ namespace Mes.Wpf.Modules.OrderLineList.ViewModels
                 return false;
             }
 
-            Items.Clear();
-
-            foreach (var item in result.Data.Items)
+            if (_preserveRows && result.Data.Items.Count == 0 && Page > 1)
             {
-                Items.Add(item);
+                Page = Math.Max(1, Math.Min(Page - 1, (int)Math.Ceiling(result.Data.Meta.Total / (double)Math.Max(Size, 1))));
+                return await LoadListAsync();
             }
+
+            ApplyItems(result.Data.Items);
+            SetQueueCounts(result.Data.QueueCounts);
 
             Page = result.Data.Meta.Page <= 0 ? Page : result.Data.Meta.Page;
             Size = result.Data.Meta.Size <= 0 ? Size : result.Data.Meta.Size;
@@ -409,8 +477,65 @@ namespace Mes.Wpf.Modules.OrderLineList.ViewModels
             return true;
         }
 
+        private void SetQueueCounts(Dictionary<string, int>? counts)
+        {
+            _lotCreationCount = counts != null && counts.TryGetValue("lot_creation", out var lotCount) ? lotCount : null;
+            _closeDecisionCount = counts != null && counts.TryGetValue("close_decision", out var closeCount) ? closeCount : null;
+            OnPropertyChanged(nameof(LotCreationButtonText));
+            OnPropertyChanged(nameof(CloseDecisionButtonText));
+        }
+
+        private void ApplyItems(List<OrderLineListItemDto> incoming)
+        {
+            var selectedId = SelectedItem?.OrderLineId;
+            var selectedIndex = SelectedItem == null ? -1 : Items.IndexOf(SelectedItem);
+            if (!_preserveRows)
+            {
+                Items.Clear();
+                foreach (var item in incoming) Items.Add(item);
+                SelectedItem = Items.FirstOrDefault(x => x.OrderLineId == selectedId);
+                return;
+            }
+
+            ItemsRefreshing?.Invoke();
+            try
+            {
+                var ids = incoming.Select(x => x.OrderLineId).ToHashSet();
+                for (var i = Items.Count - 1; i >= 0; i--)
+                    if (!ids.Contains(Items[i].OrderLineId)) Items.RemoveAt(i);
+                for (var i = 0; i < incoming.Count; i++)
+                {
+                    var item = incoming[i];
+                    var existing = Items.FirstOrDefault(x => x.OrderLineId == item.OrderLineId);
+                    if (existing == null) Items.Insert(i, item);
+                    else
+                    {
+                        var index = Items.IndexOf(existing);
+                        if (index != i) Items.Move(index, i);
+                        if (System.Text.Json.JsonSerializer.Serialize(existing) != System.Text.Json.JsonSerializer.Serialize(item))
+                            Items[i] = item;
+                    }
+                }
+                SelectedItem = Items.FirstOrDefault(x => x.OrderLineId == selectedId)
+                    ?? (selectedIndex >= 0 && Items.Count > 0 ? Items[Math.Min(selectedIndex, Items.Count - 1)] : null);
+            }
+            finally { ItemsRefreshed?.Invoke(); }
+        }
+
+        private async Task RefreshAfterActionAsync()
+        {
+            var previousPage = Page;
+            _preserveRows = true;
+            try
+            {
+                if (!await LoadListAsync()) Page = previousPage;
+            }
+            finally { _preserveRows = false; }
+        }
+
         protected override void Reset()
         {
+            SetWorkQueue(null);
             SearchKeyword = string.Empty;
             OrderDateFrom = null;
             OrderDateTo = null;
@@ -478,6 +603,7 @@ namespace Mes.Wpf.Modules.OrderLineList.ViewModels
 
         private static string GetPlanTypeDisplay(string planType) => planType switch
         {
+            "AUTO_PRODUCTION" => "전량 생산",
             "STOCK_SHIP_COMPLETE" => "재고로 출고완료",
             "PARTIAL_STOCK_PLUS_PRODUCTION" => "기존재고 예약 + 부족분 생산",
             "PARTIAL_STOCK_ONLY_CLOSE" => "재고만 출고 후 종료",
@@ -496,7 +622,7 @@ namespace Mes.Wpf.Modules.OrderLineList.ViewModels
                 && !item.HasLot
                 && item.Status == "OPEN";
 
-            CanShortClose = false;
+            CanShortClose = IsInProgressTab && item?.WorkQueue == "CLOSE_DECISION";
 
             CanConfirmPlan = IsPlanDecisionVisible;
 
@@ -504,6 +630,7 @@ namespace Mes.Wpf.Modules.OrderLineList.ViewModels
             OnPropertyChanged(nameof(CanShortClose));
             OnPropertyChanged(nameof(CanConfirmPlan));
             OnPropertyChanged(nameof(CanDeleteOrderGroup));
+            OnPropertyChanged(nameof(CanReopen));
             OnPropertyChanged(nameof(IsPlanDecisionVisible));
         }
 
@@ -542,6 +669,7 @@ namespace Mes.Wpf.Modules.OrderLineList.ViewModels
             }
 
             SelectedProductionTab = targetTab;
+            SetWorkQueue(null);
             SearchKeyword = string.Empty;
             Page = 1;
 
@@ -608,7 +736,8 @@ namespace Mes.Wpf.Modules.OrderLineList.ViewModels
                     : PlanMemo.Trim()
             };
 
-            var route = $"{ApiRoutes.OrderLines}/{SelectedItem.OrderLineId}/plan/confirm";
+            var targetId = SelectedItem.OrderLineId;
+            var route = $"{ApiRoutes.OrderLines}/{targetId}/plan/confirm";
 
             var result = await _apiClient.PostAsync<OrderLinePlanConfirmRequest, OrderLineListItemDto>(
                 route,
@@ -620,19 +749,7 @@ namespace Mes.Wpf.Modules.OrderLineList.ViewModels
                 return;
             }
 
-            var targetId = SelectedItem.OrderLineId;
-
-            await SearchAsync();
-
-            var refreshed = Items.FirstOrDefault(x => x.OrderLineId == targetId);
-            if (refreshed != null)
-            {
-                SelectedItem = refreshed;
-            }
-            else
-            {
-                SelectedItem = null;
-            }
+            await RefreshAfterActionAsync();
 
             PlanMemo = string.Empty;
 
@@ -653,7 +770,8 @@ namespace Mes.Wpf.Modules.OrderLineList.ViewModels
                 return;
             }
 
-            var route = $"{ApiRoutes.OrderLines}/{SelectedItem.OrderLineId}/base-lot";
+            var targetId = SelectedItem.OrderLineId;
+            var route = $"{ApiRoutes.OrderLines}/{targetId}/base-lot";
 
             var result = await _apiClient.PostAsync<OrderLineBaseLotCreateRequest, object>(
                 route,
@@ -665,56 +783,51 @@ namespace Mes.Wpf.Modules.OrderLineList.ViewModels
                 return;
             }
 
-            var targetId = SelectedItem.OrderLineId;
-
-            await SearchAsync();
-
-            var refreshed = Items.FirstOrDefault(x => x.OrderLineId == targetId);
-            if (refreshed != null)
-            {
-                SelectedItem = refreshed;
-            }
+            await RefreshAfterActionAsync();
 
             _messageService.ShowInfo("기본 LOT가 생성되었습니다.");
         }
 
         private async Task ShortCloseAsync()
         {
-            if (SelectedItem == null)
+            var item = SelectedItem;
+            if (item == null || !CanShortClose)
             {
-                _messageService.ShowWarning("부족종료할 발주를 먼저 선택하세요.");
+                _messageService.ShowWarning("종료판단대기 발주를 선택하세요.");
                 return;
             }
-
-            if (!CanShortClose)
-            {
-                _messageService.ShowWarning("현재 선택된 발주는 부족종료 대상이 아닙니다.");
+            if (!_messageService.Confirm(
+                $"발주 [{item.OrderNo}] / {item.LineNo}번 항목\n출고목표 {item.ShipTargetQty:N0} / 실제 출고 {item.AlreadyShippedQty:N0} / 미출고 {item.RemainingShipQty:N0}\n\n현재 실적으로 완료하시겠습니까?",
+                "현재 실적으로 완료"))
                 return;
-            }
+            await ChangeCompletionAsync(item, "manual-close", "현재 실적으로 완료했습니다.");
+        }
 
-            var route = $"{ApiRoutes.OrderLines}/{SelectedItem.OrderLineId}/short-close";
+        private async Task ReopenAsync()
+        {
+            var item = SelectedItem;
+            if (item == null || !CanReopen) return;
+            if (!_messageService.Confirm($"발주 [{item.OrderNo}] / {item.LineNo}번 항목의 수동완료를 취소하시겠습니까?\n기존 출고와 재고 수량은 유지됩니다.", "완료 취소")) return;
+            await ChangeCompletionAsync(item, "manual-reopen", "수동완료를 취소했습니다.");
+        }
 
+        private async Task ChangeCompletionAsync(OrderLineListItemDto item, string action, string successMessage)
+        {
             var result = await _apiClient.PatchAsync<OrderLineShortCloseRequest, OrderLineListItemDto>(
-                route,
-                new OrderLineShortCloseRequest());
-
+                $"{ApiRoutes.OrderLines}/{item.OrderLineId}/{action}",
+                new OrderLineShortCloseRequest
+                {
+                    ExpectedUpdatedAt = item.UpdatedAt,
+                    ExpectedShipTargetQty = item.ShipTargetQty,
+                    ExpectedShippedQty = item.AlreadyShippedQty
+                });
             if (!result.Success || result.Data == null)
             {
-                _messageService.ShowError(result.Message ?? "부족종료 처리 중 오류가 발생했습니다.");
+                _messageService.ShowError(result.Message ?? "완료 상태 변경에 실패했습니다.");
                 return;
             }
-
-            var targetId = SelectedItem.OrderLineId;
-
-            await SearchAsync();
-
-            var refreshed = Items.FirstOrDefault(x => x.OrderLineId == targetId);
-            if (refreshed != null)
-            {
-                SelectedItem = refreshed;
-            }
-
-            _messageService.ShowInfo("부족종료 처리되었습니다.");
+            await RefreshAfterActionAsync();
+            _messageService.ShowInfo(successMessage);
         }
 
         private async Task OpenOrderDetailAsync()
@@ -732,6 +845,7 @@ namespace Mes.Wpf.Modules.OrderLineList.ViewModels
             }
 
             await _openDetailAsync(SelectedItem.OrderLineId);
+            await RefreshAfterActionAsync();
         }
 
         private async Task OpenLotActionAsync()
@@ -755,6 +869,7 @@ namespace Mes.Wpf.Modules.OrderLineList.ViewModels
             }
 
             await _openLotCreateAsync(SelectedItem);
+            await RefreshAfterActionAsync();
         }
 
         private async Task DeleteOrderGroupAsync()
@@ -807,6 +922,9 @@ namespace Mes.Wpf.Modules.OrderLineList.ViewModels
 
             var statusGroup = IsCompletedTab ? ProductionTabCompleted : ProductionTabInProgress;
             queryParts.Add($"status_group={Uri.EscapeDataString(statusGroup)}");
+
+            if (IsInProgressTab && _selectedWorkQueue != null)
+                queryParts.Add($"work_queue={_selectedWorkQueue}");
 
             if (IsCompletedTab)
             {

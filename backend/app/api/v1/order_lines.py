@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from datetime import date
-from typing import Optional
+from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status as http_status
 from sqlalchemy.exc import IntegrityError
@@ -48,7 +48,7 @@ from app.services.order_line_response_builder import (
     build_order_line_out,
     get_order_line_out_by_id,
 )
-from app.services.order_line_short_close_service import short_close_order_line_status
+from app.services.order_line_manual_close_service import manual_close_order_line, reopen_manual_order_line
 from app.services.order_line_update_service import update_order_line_fields
 
 router = APIRouter(prefix="/order-lines", tags=["OrderLine"])
@@ -153,6 +153,7 @@ def list_order_lines(
     q: Optional[str] = Query(None),
     status: Optional[str] = Query(None),
     status_group: Optional[str] = Query(None),
+    work_queue: Optional[Literal["LOT_CREATION", "CLOSE_DECISION"]] = Query(None),
     is_active: Optional[bool] = Query(True),
     partner_id: Optional[int] = Query(None),
     product_id: Optional[int] = Query(None),
@@ -161,13 +162,14 @@ def list_order_lines(
     due_date_from: Optional[date] = Query(None),
     due_date_to: Optional[date] = Query(None),
 ):
-    items, total = list_order_lines_for_grid(
+    items, total, queue_counts = list_order_lines_for_grid(
         db,
         page=page,
         size=size,
         q=q,
         status=status,
         status_group=status_group,
+        work_queue=work_queue,
         is_active=is_active,
         partner_id=partner_id,
         product_id=product_id,
@@ -180,6 +182,7 @@ def list_order_lines(
     return OrderLineListOut(
         items=[OrderLineOut(**x) for x in items],
         meta=PageMeta(page=page, size=size, total=total),
+        queue_counts=queue_counts,
     )
 
 
@@ -299,6 +302,7 @@ def update_order_line_detail(
 
 
 @router.patch("/{order_line_id}/short-close", response_model=OrderLineOut)
+@router.patch("/{order_line_id}/manual-close", response_model=OrderLineOut)
 def short_close_order_line(
     order_line_id: int,
     payload: OrderLineShortCloseRequest,
@@ -306,7 +310,7 @@ def short_close_order_line(
     current_user: User = Depends(get_current_user),
 ):
     try:
-        obj = short_close_order_line_status(db, order_line_id, payload, actor=current_user.login_id)
+        obj = manual_close_order_line(db, order_line_id, payload, actor=current_user.login_id)
         db.commit()
         db.refresh(obj)
     except HTTPException:
@@ -316,6 +320,25 @@ def short_close_order_line(
         db.rollback()
         raise HTTPException(status_code=409, detail="부족종료 처리 중 무결성 오류가 발생했습니다.")
 
+    return build_order_line_out(db, obj)
+
+
+@router.patch("/{order_line_id}/manual-reopen", response_model=OrderLineOut)
+def reopen_order_line(
+    order_line_id: int,
+    payload: OrderLineShortCloseRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    try:
+        obj = reopen_manual_order_line(db, order_line_id, payload, actor=current_user.login_id)
+        db.commit()
+    except HTTPException:
+        db.rollback()
+        raise
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="완료 취소 중 무결성 오류가 발생했습니다.")
     return build_order_line_out(db, obj)
 
 

@@ -47,6 +47,10 @@ class OrderLine(Base):
             "short_close_state IN ('NONE','CONFIRMED','REVIEW_REQUIRED')",
             name="ck_order_line__short_close_state",
         ),
+        CheckConstraint(
+            "NOT manual_closed OR (status = 'DONE' AND short_close_state = 'CONFIRMED')",
+            name="ck_order_line__manual_closed",
+        ),
         Index("ix_order_line__partner_id", "partner_id"),
         Index("ix_order_line__product_id", "product_id"),
         Index("ix_order_line__order_date", "order_date"),
@@ -96,6 +100,8 @@ class OrderLine(Base):
     short_close_state: Mapped[str] = mapped_column(
         String(20), nullable=False, default="NONE", server_default="NONE"
     )
+    lot_creation_deferred: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    manual_closed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     priority: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 

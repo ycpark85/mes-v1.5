@@ -1,5 +1,11 @@
 # Database Architecture
 
+## Order work-queue origin and manual completion — 2026-09-22
+
+Migration `7c8d9e0f1a2b` follows `6b7c8d9e0f1a`. It adds NOT NULL boolean fields `order_line.lot_creation_deferred` and `manual_closed`, both default false. `ck_order_line__manual_closed` requires DONE/CONFIRMED whenever manual_closed is true. The first flag preserves registration-time stock deferral; current queue membership remains a derived query rather than a second stored status.
+
+Backfill marks only active OPEN orders with saved INVENTORY_FIRST/HYBRID intent, no LOT and no inventory-only-close policy. Existing quantities, status, timestamps and audit history are preserved. Existing SHORT_CLOSE audit rows gain structured action values for new manual close/reopen/rework decisions without adding a new table or changing old rows. Downgrade refuses if any such decision history exists, even after reopening. DDL uses a 5-second lock timeout. Existing order/LOT/schedule/latest-plan/movement indexes support the predicates; no speculative index is added. See [implementation and rollout](order-work-queues-2026-09-22.md).
+
 ## Explicit order shortage-close state — 2026-09-14
 
 Migration `6b7c8d9e0f1a` follows `5a6b7c8d9e0f`. `order_line.short_close_state` is NOT NULL, defaults to `NONE`, and a CHECK permits `NONE`, `CONFIRMED`, `REVIEW_REQUIRED`. It represents the current decision independently of editable memo text. No new relationship or index is needed for the existing primary-key and list reads.
