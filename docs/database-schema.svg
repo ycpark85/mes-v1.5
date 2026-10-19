@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1180" height="1740" viewBox="0 0 1180 1740">
+<svg xmlns="http://www.w3.org/2000/svg" width="1180" height="2220" viewBox="0 0 1180 2220">
   <style>
     .box { fill:#ffffff; stroke:#334155; stroke-width:1.5; rx:6; }
     .read { fill:#f0fdf4; stroke:#15803d; stroke-width:1.8; rx:6; }
@@ -197,4 +197,39 @@
   <text class="text" x="700" y="1642">Reopening preserves prior decisions and shipment history.</text>
   <text class="text" x="700" y="1670">New decision history blocks destructive downgrade.</text>
   <path class="line" d="M680 1576 L540 1576"/>
+  <text class="title" x="40" y="1770">Unprinted product management (2026-10-19)</text>
+  <rect class="box" x="40" y="1790" width="250" height="150"/>
+  <text class="title" x="60" y="1820">partner</text>
+  <text class="text" x="60" y="1850">PK partner_id</text>
+  <text class="text" x="60" y="1874">Active CUSTOMER for new links</text>
+  <text class="text" x="60" y="1902">A and B may share one product</text>
+  <rect class="box" x="360" y="1790" width="430" height="210"/>
+  <text class="title" x="380" y="1820">partner_product_mapping</text>
+  <text class="text" x="380" y="1850">PK mapping_id; FK partner_id / product_id (RESTRICT)</text>
+  <text class="text" x="380" y="1874">ERP code / customer name / specification</text>
+  <text class="text" x="380" y="1898">UNIQUE (partner_id, erp_product_code) WHERE active</text>
+  <text class="text" x="380" y="1922">CHECK trimmed uppercase code; nonempty name</text>
+  <text class="text" x="380" y="1946">created_by/at; deactivated_by/at; is_active</text>
+  <text class="text" x="380" y="1974">Soft deactivation preserves link history</text>
+  <rect class="box" x="860" y="1790" width="280" height="210"/>
+  <text class="title" x="880" y="1820">product</text>
+  <text class="text" x="880" y="1850">PK product_id; UNIQUE product_code</text>
+  <text class="text" x="880" y="1874">UNIQUE drawing_id (1:1 retained)</text>
+  <text class="text" x="880" y="1898">is_unprinted_managed: false default</text>
+  <text class="text" x="880" y="1922">Explicit opt-in; no renumbering</text>
+  <text class="text" x="880" y="1946">Shared product = shared inventory</text>
+  <path class="line" d="M360 1845 L290 1845"/>
+  <path class="line" d="M790 1845 L860 1845"/>
+  <rect class="box" x="40" y="2040" width="500" height="155"/>
+  <text class="title" x="60" y="2070">order_line (source snapshot)</text>
+  <text class="text" x="60" y="2100">source_erp_product_code / source_product_name / spec</text>
+  <text class="text" x="60" y="2124">CHECK all null OR nonempty ERP code + name</text>
+  <text class="text" x="60" y="2148">Existing product_id, quantities and history preserved</text>
+  <text class="text" x="60" y="2174">Mapping changes never reassign historical orders</text>
+  <rect class="box" x="680" y="2040" width="460" height="155"/>
+  <text class="title" x="700" y="2070">unprinted_product_code_counter</text>
+  <text class="text" x="700" y="2100">PK counter_id; CHECK id = 1, next_value &gt; 0</text>
+  <text class="text" x="700" y="2124">Atomic transaction allocation: MES-U000001...</text>
+  <text class="text" x="700" y="2148">Rollback also rolls back allocation</text>
+  <text class="text" x="700" y="2174">Used feature data blocks destructive downgrade</text>
 </svg>

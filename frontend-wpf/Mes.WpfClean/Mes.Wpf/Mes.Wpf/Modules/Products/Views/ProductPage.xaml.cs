@@ -1,4 +1,4 @@
-﻿using Mes.Wpf.Modules.Drawings.Dtos;
+using Mes.Wpf.Modules.Drawings.Dtos;
 using Mes.Wpf.Modules.Products.ViewModels;
 using System.Windows;
 using System.Windows.Controls;
@@ -13,6 +13,14 @@ namespace Mes.Wpf.Modules.Products.Views
         public ProductPage()
         {
             InitializeComponent();
+        }
+
+        private void PartnerMappings_Click(object sender, RoutedEventArgs e)
+        {
+            if (DataContext is not ProductPageViewModel vm || !vm.CanManagePartnerMappings || vm.SelectedItem == null) return;
+            var window = new PartnerProductMappingWindow(new PartnerProductMappingViewModel(vm.ApiClient, vm.MessageService, vm.SelectedItem))
+            { Owner = Window.GetWindow(this) };
+            window.ShowDialog();
         }
 
         private void BulkUpload_Click(object sender, RoutedEventArgs e)
@@ -40,6 +48,7 @@ namespace Mes.Wpf.Modules.Products.Views
 
         private void DrawingSearchTextBox_KeyDown(object sender, KeyEventArgs e)
         {
+            if (DataContext is ProductPageViewModel current && !current.CanChangeDrawing) return;
             if (e.Key != Key.Enter)
             {
                 return;

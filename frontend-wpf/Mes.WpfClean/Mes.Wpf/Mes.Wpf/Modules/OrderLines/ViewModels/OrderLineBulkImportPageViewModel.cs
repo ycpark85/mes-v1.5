@@ -1,4 +1,4 @@
-﻿using ClosedXML.Excel;
+using ClosedXML.Excel;
 using Mes.Wpf.Core.Common;
 using Mes.Wpf.Core.Constants;
 using Mes.Wpf.Core.Interfaces;
@@ -227,10 +227,11 @@ namespace Mes.Wpf.Modules.OrderLines.ViewModels
                     Items = new ObservableCollection<OrderLineBulkImportRowDto>(SourceRows),
                     RowChoices = new ObservableCollection<OrderLineBulkCommitRowChoiceDto>(
                         FlatRows
-                            .Where(x => x.CanApplyProductNameChange)
                             .Select(x => new OrderLineBulkCommitRowChoiceDto
                             {
                                 RowNumber = x.RowNumber,
+                                ExpectedProductId = x.ProductId,
+                                ExpectedMappingId = x.MappingId,
                                 ApplyProductNameChange = x.ApplyProductNameChange
                             }))
                 };

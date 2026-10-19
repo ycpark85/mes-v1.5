@@ -1,0 +1,23 @@
+.......................................ss.....ss........s...s....................................................... [ 26%]
+....................s..................................s........................................................................ [ 55%]
+.....s......s............... [ 62%]
+........................................................................................................................ [ 89%]
+............................................                             [100%]
+============================= slowest 5 durations =============================
+2.06s call     tests/test_unprinted_postgres.py::test_migration_preservation_concurrency_and_rollback_guard
+0.46s call     tests/test_windows_release_installation.py::WindowsReleaseInstallationTests::test_verified_package_install_is_idempotent
+0.30s call     tests/test_windows_release_installation.py::WindowsReleaseInstallationTests::test_tampered_package_is_rejected_before_install
+0.30s call     tests/test_order_work_queues.py::OrderWorkQueueTests::test_completed_list_skips_queue_evaluation_and_refreshes_on_return
+0.27s call     tests/test_outsource_purchase_order_query.py::OutsourcePurchaseOrderQueryTests::test_list_purchase_order_targets_excludes_already_ordered_groups
+=========================== short test summary info ===========================
+SKIPPED [1] tests\test_inspection_corrections.py:467: requires dedicated PostgreSQL instance
+SKIPPED [1] tests\test_inspection_corrections.py:361: requires dedicated PostgreSQL instance
+SKIPPED [1] tests\test_inspection_corrections.py:426: requires dedicated PostgreSQL instance
+SKIPPED [1] tests\test_inspection_corrections.py:385: requires dedicated PostgreSQL instance
+SKIPPED [1] tests\test_inspection_corrections.py:492: requires dedicated PostgreSQL instance
+SKIPPED [1] tests\test_inspection_corrections.py:564: requires dedicated PostgreSQL instance
+SKIPPED [1] tests\test_inventory_lot_flows.py:31: requires dedicated PostgreSQL instance
+SKIPPED [1] tests\test_mes_backup_scripts.py:131: Symbolic links are not available for this test user
+SKIPPED [1] tests\test_order_work_queues.py:408: Requires dedicated PostgreSQL
+SKIPPED [1] tests\test_order_work_queues.py:433: Requires dedicated PostgreSQL
+426 passed, 10 skipped, 112 subtests passed in 13.15s

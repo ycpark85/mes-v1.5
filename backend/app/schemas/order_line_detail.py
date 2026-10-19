@@ -38,7 +38,11 @@ class OrderLineDetailDto(BaseModel):
     partner_name: str
 
     product_id: int
+    source_erp_product_code: Optional[str] = None
+    source_product_name: Optional[str] = None
+    source_product_spec: Optional[str] = None
     product_code: str
+    mes_product_code: str | None = None
     product_name: str
 
     order_date: date

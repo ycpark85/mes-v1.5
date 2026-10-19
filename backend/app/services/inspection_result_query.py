@@ -281,7 +281,8 @@ def list_inspection_results_for_grid(
             InspectionResult.shortage_reason,
             OrderLine.due_date,
             Partner.name.label("partner_name"),
-            Product.product_code,
+            func.coalesce(OrderLine.source_erp_product_code, Product.product_code).label("product_code"),
+            Product.product_code.label("mes_product_code"),
             Product.product_name,
             Lot.lot_qty,
             OrderLine.order_qty,
@@ -335,7 +336,7 @@ def list_inspection_results_for_grid(
             or_(
                 Partner.name.ilike(keyword),
                 Product.product_name.ilike(keyword),
-                Product.product_code.ilike(keyword),
+                (Product.product_code.ilike(keyword) | OrderLine.source_erp_product_code.ilike(keyword)),
                 Lot.lot_no.ilike(keyword),
             )
         )
@@ -346,7 +347,7 @@ def list_inspection_results_for_grid(
         stmt = stmt.where(
             or_(
                 Product.product_name.ilike(product_keyword),
-                Product.product_code.ilike(product_keyword),
+                (Product.product_code.ilike(product_keyword) | OrderLine.source_erp_product_code.ilike(product_keyword)),
             )
         )
     if lot_q and lot_q.strip():
@@ -395,6 +396,7 @@ def list_inspection_results_for_grid(
                 due_date=row["due_date"],
                 partner_name=str(row["partner_name"] or ""),
                 product_code=str(row["product_code"] or ""),
+                mes_product_code=row["mes_product_code"],
                 product_name=str(row["product_name"] or ""),
                 lot_qty=int(row["lot_qty"] or 0),
                 order_qty=int(row["order_qty"] or 0),
@@ -464,7 +466,20 @@ def get_inspection_result_detail(
         0,
     )
 
+    codes = db.execute(
+        select(
+            func.coalesce(OrderLine.source_erp_product_code, Product.product_code),
+            Product.product_code,
+        )
+        .select_from(Lot)
+        .join(OrderLine, OrderLine.order_line_id == Lot.order_line_id)
+        .join(Product, Product.product_id == Lot.product_id)
+        .where(Lot.lot_id == schedule.lot_id)
+    ).one()
+
     return InspectionResultGetOut(
+        product_code=codes[0],
+        mes_product_code=codes[1],
         result=result,
         schedule_status=schedule.status,
         inspection_round=inspection_round,

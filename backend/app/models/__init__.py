@@ -4,6 +4,7 @@ from .routing_template_step import RoutingTemplateStep
 from .drawing import Drawing
 from .drawing_revision import DrawingRevision
 from .product import Product
+from .partner_product_mapping import PartnerProductMapping, UnprintedProductCodeCounter
 from .partner import Partner
 from .defect_type import DefectType
 from .order_line import OrderLine
@@ -58,6 +59,8 @@ __all__ = [
     "Drawing",
     "DrawingRevision",
     "Product",
+    "PartnerProductMapping",
+    "UnprintedProductCodeCounter",
     "Partner",
     "DefectType",
     "OrderLine",

@@ -1,4 +1,4 @@
-﻿using ClosedXML.Excel;
+using ClosedXML.Excel;
 using Mes.Wpf.Core.Common;
 using Mes.Wpf.Core.Common.ViewModels;
 using Mes.Wpf.Core.Constants;
@@ -27,6 +27,7 @@ namespace Mes.Wpf.Modules.Products.ViewModels
 
         private string _searchKeyword = string.Empty;
         private string _selectedUseYn = "사용";
+        private string _selectedManagementMode = "전체";
         private bool _isCodeEditable = true;
         private bool _isEditMode = true;
         private string _bulkFilePath = string.Empty;
@@ -44,11 +45,20 @@ namespace Mes.Wpf.Modules.Products.ViewModels
             _drawingViewer = drawingViewer;
             Items = new ObservableCollection<ProductDto>();
             UseYnOptions = new ObservableCollection<string> { "사용", "미사용" };
+            ManagementModeOptions = new ObservableCollection<string> { "전체", "기존 방식", "무지 별도관리" };
             UomOptions = new ObservableCollection<string> { "EA", "Roll" };
             DrawingOptions = new ObservableCollection<DrawingDto>();
             RoutingTemplateOptions = new ObservableCollection<RoutingTemplateDto>();
             EditModel = new ProductEditModel();
             EditModel.Uom = "EA";
+            EditModel.PropertyChanged += (_, e) =>
+            {
+                if (e.PropertyName == nameof(ProductEditModel.IsUnprintedManaged))
+                {
+                    if (SelectedItem == null && EditModel.IsUnprintedManaged) EditModel.ProductCode = string.Empty;
+                    NotifyManagementState();
+                }
+            };
             BulkRows = new ObservableCollection<ProductBulkUploadRowModel>();
 
             SaveCommand = new AsyncRelayCommand(SaveAsync);
@@ -63,6 +73,7 @@ namespace Mes.Wpf.Modules.Products.ViewModels
 
         public ObservableCollection<ProductDto> Items { get; }
         public ObservableCollection<string> UseYnOptions { get; }
+        public ObservableCollection<string> ManagementModeOptions { get; }
         public ObservableCollection<string> UomOptions { get; }
         public ObservableCollection<DrawingDto> DrawingOptions { get; }
         public ObservableCollection<RoutingTemplateDto> RoutingTemplateOptions { get; }
@@ -96,10 +107,16 @@ namespace Mes.Wpf.Modules.Products.ViewModels
             set => SetProperty(ref _selectedUseYn, value);
         }
 
+        public string SelectedManagementMode
+        {
+            get => _selectedManagementMode;
+            set => SetProperty(ref _selectedManagementMode, value);
+        }
+
         public bool IsCodeEditable
         {
             get => _isCodeEditable;
-            set => SetProperty(ref _isCodeEditable, value);
+            set { if (SetProperty(ref _isCodeEditable, value)) NotifyManagementState(); }
         }
 
         public bool IsEditMode
@@ -109,6 +126,7 @@ namespace Mes.Wpf.Modules.Products.ViewModels
             {
                 if (SetProperty(ref _isEditMode, value))
                 {
+                    NotifyManagementState();
                     OnPropertyChanged(nameof(IsReadOnlyMode));
                     OnPropertyChanged(nameof(CanSave));
                     OnPropertyChanged(nameof(CanEdit));
@@ -116,6 +134,21 @@ namespace Mes.Wpf.Modules.Products.ViewModels
             }
         }
 
+        public bool CanEnterProductCode => IsCodeEditable && !EditModel.IsUnprintedManaged;
+        public bool CanChangeManagement => IsEditMode && SelectedItem?.IsUnprintedManaged != true;
+        public bool CanManagePartnerMappings => !IsEditMode && SelectedItem?.IsUnprintedManaged == true && SelectedItem.IsActive && !IsLoading;
+        public bool CanChangeDrawing => IsEditMode && !(SelectedItem != null && EditModel.IsUnprintedManaged);
+        public string ManagementHelp => EditModel.IsUnprintedManaged
+            ? (SelectedItem == null ? "저장 시 MES 내부번호 자동 발급 → 거래처 연결에서 ERP 코드 등록" : "동일 도면을 쓰는 거래처는 이 품목에 함께 연결하세요. 도면이 다르면 새 품목을 등록하세요.")
+            : "기존 품목은 그대로 사용하세요. 앞으로 ERP 코드를 공유할 무지 품목만 별도관리를 선택하세요.";
+        private void NotifyManagementState()
+        {
+            OnPropertyChanged(nameof(CanEnterProductCode));
+            OnPropertyChanged(nameof(CanChangeManagement));
+            OnPropertyChanged(nameof(CanManagePartnerMappings));
+            OnPropertyChanged(nameof(CanChangeDrawing));
+            OnPropertyChanged(nameof(ManagementHelp));
+        }
         public bool IsReadOnlyMode => !IsEditMode;
         public bool CanSave => IsEditMode && !IsLoading;
         public bool CanEdit => !IsEditMode && SelectedItem != null && !IsLoading;
@@ -192,6 +225,7 @@ namespace Mes.Wpf.Modules.Products.ViewModels
         {
             SearchKeyword = string.Empty;
             SelectedUseYn = "사용";
+            SelectedManagementMode = "전체";
             SelectedItem = null;
             EditModel.Clear();
             EditModel.Uom = "EA";
@@ -226,6 +260,7 @@ namespace Mes.Wpf.Modules.Products.ViewModels
 
         protected override void OnSelectedItemChanged(ProductDto? item)
         {
+            NotifyManagementState();
             _ = LoadToEditModelAsync(item);
         }
 
@@ -273,7 +308,11 @@ namespace Mes.Wpf.Modules.Products.ViewModels
                 return;
             }
 
+            if (SelectedItem != null && !SelectedItem.IsUnprintedManaged && EditModel.IsUnprintedManaged
+                && !_messageService.Confirm("이 품목을 무지 별도관리로 전환합니다. 기존 코드·도면·수주는 유지됩니다. 이후 수주 등록에는 거래처 연결이 필요하며 기존 방식으로 되돌릴 수 없습니다. 계속하시겠습니까?", "무지 전환 확인")) return;
+
             IsLoading = true;
+            NotifyManagementState();
             try
             {
                 if (SelectedItem == null)
@@ -290,6 +329,7 @@ namespace Mes.Wpf.Modules.Products.ViewModels
                 IsLoading = false;
                 OnPropertyChanged(nameof(CanSave));
                 OnPropertyChanged(nameof(CanEdit));
+                NotifyManagementState();
             }
         }
 
@@ -347,6 +387,7 @@ namespace Mes.Wpf.Modules.Products.ViewModels
                 IsLoading = false;
                 OnPropertyChanged(nameof(CanSave));
                 OnPropertyChanged(nameof(CanEdit));
+                NotifyManagementState();
             }
         }
 
@@ -354,7 +395,8 @@ namespace Mes.Wpf.Modules.Products.ViewModels
         {
             var request = new ProductCreateRequest
             {
-                ProductCode = EditModel.ProductCode,
+                ProductCode = EditModel.IsUnprintedManaged ? string.Empty : EditModel.ProductCode,
+                IsUnprintedManaged = EditModel.IsUnprintedManaged,
                 ProductName = EditModel.ProductName,
                 Uom = EditModel.Uom,
                 DrawingId = EditModel.DrawingId ?? 0,
@@ -376,28 +418,9 @@ namespace Mes.Wpf.Modules.Products.ViewModels
 
             await SearchAsync();
 
-            var createdItem = Items.FirstOrDefault(x => x.ProductCode == request.ProductCode);
-            if (createdItem != null)
-            {
-                SelectedItem = createdItem;
-                await LoadToEditModelAsync(createdItem);
-            }
-            else
-            {
-                SelectedItem = null;
-                EditModel.Clear();
-                EditModel.Uom = "EA";
-
-                DrawingSearchKeyword = string.Empty;
-                SelectedDrawingNo = string.Empty;
-                SelectedDrawingCurrentRevisionId = null;
-                DrawingOptions.Clear();
-
-                IsCodeEditable = true;
-                IsEditMode = true;
-
-                _ = SearchDrawingsAsync(string.Empty);
-            }
+            var createdItem = Items.FirstOrDefault(x => x.ProductId == result.Data.ProductId) ?? result.Data;
+            SelectedItem = createdItem;
+            await LoadToEditModelAsync(createdItem);
 
             _messageService.ShowInfo("저장되었습니다.");
         }
@@ -406,6 +429,7 @@ namespace Mes.Wpf.Modules.Products.ViewModels
         {
             var request = new ProductUpdateRequest
             {
+                IsUnprintedManaged = EditModel.IsUnprintedManaged,
                 ProductName = EditModel.ProductName,
                 Uom = EditModel.Uom,
                 DrawingId = EditModel.DrawingId ?? 0,
@@ -438,6 +462,7 @@ namespace Mes.Wpf.Modules.Products.ViewModels
             }
             else
             {
+                SelectedItem = result.Data;
                 await LoadToEditModelAsync(result.Data);
             }
 
@@ -489,6 +514,7 @@ namespace Mes.Wpf.Modules.Products.ViewModels
             }
 
             var result = await _apiClient.GetAsync<DrawingDto>($"{ApiRoutes.Drawings}/{drawingId}");
+            if (EditModel.DrawingId != drawingId) return;
             if (!result.Success || result.Data == null)
             {
                 SelectedDrawingNo = string.Empty;
@@ -505,6 +531,7 @@ namespace Mes.Wpf.Modules.Products.ViewModels
 
         public void SelectDrawing(DrawingDto? drawing)
         {
+            if (!CanChangeDrawing) return;
             if (drawing == null)
             {
                 EditModel.DrawingId = null;
@@ -544,7 +571,7 @@ namespace Mes.Wpf.Modules.Products.ViewModels
 
         private bool ValidateForSave()
         {
-            if (SelectedItem == null && string.IsNullOrWhiteSpace(EditModel.ProductCode))
+            if (SelectedItem == null && !EditModel.IsUnprintedManaged && string.IsNullOrWhiteSpace(EditModel.ProductCode))
             {
                 _messageService.ShowWarning("품목코드는 필수입니다.");
                 return false;
@@ -612,6 +639,15 @@ namespace Mes.Wpf.Modules.Products.ViewModels
             else if (SelectedUseYn == "미사용")
             {
                 queryParts.Add("is_active=false");
+            }
+
+            if (SelectedManagementMode == "무지 별도관리")
+            {
+                queryParts.Add("is_unprinted_managed=true");
+            }
+            else if (SelectedManagementMode == "기존 방식")
+            {
+                queryParts.Add("is_unprinted_managed=false");
             }
 
             return $"{ApiRoutes.Products}?{string.Join("&", queryParts)}";

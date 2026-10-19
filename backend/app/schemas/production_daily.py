@@ -21,6 +21,7 @@ class ProductionDailyRowOut(BaseModel):
     partner_name: str
     product_id: int
     product_code: str
+    mes_product_code: str | None = None
     product_name: str
     order_qty: int
     available_inventory_qty: int

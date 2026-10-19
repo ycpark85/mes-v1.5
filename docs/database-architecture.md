@@ -1,5 +1,23 @@
 # Database Architecture
 
+## Opt-in unprinted products and partner ERP mappings — 2026-10-19
+
+Scope is prospective code sharing. Existing products and their data are correct and continue using the current path. Rollout does not require converting existing products, auditing historical drawings/dies, or reallocating inventory. Explicit opt-in is only relevant if an existing unprinted product itself begins sharing its ERP code in future.
+
+Migration `8d9e0f1a2b3c` follows `7c8d9e0f1a2b`. `product.is_unprinted_managed` is NOT NULL with default false, preserving the existing registration/matching path. `product_code` and `drawing_id` remain UNIQUE; the MES product still owns exactly one drawing. Opt-in conversion keeps its original product ID/code/drawing. A managed product's drawing and management mode cannot be replaced through the API.
+
+On 2026-10-19, the local development database `mes_db` was upgraded from `7c8d9e0f1a2b` after a full database/file backup to resolve a missing-column error during product listing. All legacy column values across 52 existing tables matched the pre-upgrade hashes; `alembic check` reported no pending schema differences. This was a local development update, not a deployment to a separate production server. No additional schema change was made.
+
+`partner_product_mapping` references partner and product with RESTRICT foreign keys. Its active-only unique index on `(partner_id, erp_product_code)` allows multiple partners to share one product and preserves deactivated mapping history. ERP codes are trimmed and uppercased, enforced by a CHECK. Product and ERP-code indexes support product-level pagination and detecting unmapped/deactivated codes. The service prevents mapping a legacy/printed code without explicit conversion, and prevents legacy registration from shadowing a previously mapped code. A PostgreSQL transaction advisory lock serializes these cross-table namespace checks. Only active CUSTOMER partners and managed active products can be linked.
+
+`unprinted_product_code_counter` is a single-row table with positive next value. Atomic UPDATE/RETURNING allocates codes in the product creation transaction; rollback restores the counter. Existing code collisions are skipped. No external sequence extension or dependency is required.
+
+`order_line.source_erp_product_code`, `source_product_name`, and `source_product_spec` are nullable snapshots for newly registered managed orders. A CHECK requires either all three null, or a nonempty ERP code and name with optional specification. No historical snapshot is guessed or backfilled. The order retains its product ID even after a mapping is deactivated/replaced. Bulk commit re-resolves and locks the current mapping/product and compares the reviewed mapping/product IDs. Direct managed order creation requires exactly one active connection for the selected partner/product.
+
+Order-context read responses now project `product_code` from the immutable order source ERP code, falling back to the stored product code for legacy orders. `mes_product_code` separately exposes the internal product code. This applies through LOT, outsource, inspection, production progress and shipment reads; filters accept either code. The production progress snapshot still stores the internal code and joins its order at read time, so existing snapshots need no rebuild. No new column, historical update or migration is required for this display change. Product IDs remain the drawing/inventory identity. The schema SVG was reviewed; its physical relationships remain unchanged by this follow-up.
+
+DDL uses a 5-second lock timeout. Before use, downgrade can remove the new empty structures; once a managed product, any connection history, or an ERP source snapshot exists, downgrade refuses to discard it. Existing inventory remains keyed by product ID: connecting A/B to the same product shares their stock. No automatic historical stock split occurs. See [implementation and rollout](unprinted-product-management-2026-10-19.md).
+
 ## Order work-queue origin and manual completion — 2026-09-22
 
 Migration `7c8d9e0f1a2b` follows `6b7c8d9e0f1a`. It adds NOT NULL boolean fields `order_line.lot_creation_deferred` and `manual_closed`, both default false. `ck_order_line__manual_closed` requires DONE/CONFIRMED whenever manual_closed is true. The first flag preserves registration-time stock deferral; current queue membership remains a derived query rather than a second stored status.

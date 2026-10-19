@@ -115,6 +115,8 @@
                                     Width="180"
                                     Binding="{Binding PartnerName}"/>
 
+                <DataGridTextColumn Header="품목코드" Binding="{Binding ProductCodesText}" Width="150" IsReadOnly="True"/>
+                <DataGridTextColumn Header="MES 코드" Binding="{Binding MesProductCodesText}" Width="150" IsReadOnly="True"/>
                 <DataGridTextColumn Header="품목명"
                                     Width="220"
                                     Binding="{Binding ProductNamesText}"/>
@@ -202,6 +204,8 @@
                     <TextBlock Text="{Binding InboundSourceName, StringFormat=입고처: {0}}"/>
                     <TextBlock Text="{Binding PartnerName, StringFormat=거래처: {0}}"/>
                     <TextBlock Text="{Binding ProductNamesText, StringFormat=품목명: {0}}"/>
+                    <TextBlock Text="{Binding ProductCodesText, StringFormat=품목코드: {0}}" TextWrapping="Wrap"/>
+                    <TextBlock Text="{Binding MesProductCodesText, StringFormat=MES 코드: {0}}" TextWrapping="Wrap" Foreground="#64748B"/>
                 </StackPanel>
 
                 <StackPanel Grid.Column="2">

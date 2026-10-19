@@ -59,6 +59,7 @@ class OutsourceWorkInstructionItemOut(BaseModel):
     order_no: Optional[str] = None
     line_no: Optional[int] = None
     product_code: Optional[str] = None
+    mes_product_code: str | None = None
     product_name: Optional[str] = None
     lot_qty: Optional[int] = None
     process_type: str
@@ -86,6 +87,7 @@ class OutsourceWorkInstructionCandidateLotOut(BaseModel):
     line_no: int
     product_id: int
     product_code: str
+    mes_product_code: str | None = None
     product_name: str
     customer_partner_id: int
     customer_partner_name: Optional[str] = None
@@ -126,6 +128,7 @@ class OutsourcePurchaseOrderTargetOut(BaseModel):
 
     product_id: int
     product_code: str
+    mes_product_code: str | None = None
     product_name: str
     lot_qty: int
     representative_lot_id: Optional[int] = None
@@ -162,6 +165,7 @@ class OutsourceWorkGroupLotOut(BaseModel):
     order_no: Optional[str] = None
     line_no: Optional[int] = None
     product_code: Optional[str] = None
+    mes_product_code: str | None = None
     product_name: Optional[str] = None
     lot_qty: Optional[int] = None
     cuts_per_sheet: int
@@ -185,6 +189,8 @@ class OutsourceWorkGroupListItemOut(BaseModel):
     representative_product_name: Optional[str] = None
     lot_nos_text: str = ""
     product_names_text: str = ""
+    product_codes_text: str = ""
+    mes_product_codes_text: str = ""
     sheet_qty: int
     length_m: Optional[Decimal] = None
     sheet_cut_count: int
@@ -279,6 +285,7 @@ class OutsourcePurchaseOrderItemOut(BaseModel):
     order_no: Optional[str] = None
     line_no: Optional[int] = None
     product_code: Optional[str] = None
+    mes_product_code: str | None = None
     product_name: Optional[str] = None
     lot_qty: Optional[int] = None
 
@@ -380,6 +387,7 @@ class BohyunOutsourceGroupItemOut(BaseModel):
 
     product_id: Optional[int] = None
     product_code: Optional[str] = None
+    mes_product_code: str | None = None
     product_name: Optional[str] = None
 
     cuts_per_sheet: int

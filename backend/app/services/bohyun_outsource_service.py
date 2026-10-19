@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from app.services.order_line_display import order_product_code
+
 from collections import defaultdict
 from datetime import date
 from decimal import Decimal
@@ -148,7 +150,7 @@ def list_bohyun_outsource_groups(
             .where(
                 (Lot.lot_no.ilike(like))
                 | (OrderLine.order_no == normalized_q.upper())
-                | (Product.product_code.ilike(like))
+                | ((Product.product_code.ilike(like) | OrderLine.source_erp_product_code.ilike(like)))
                 | (Product.product_name.ilike(like))
             )
             .limit(1)
@@ -250,7 +252,8 @@ def list_bohyun_outsource_groups(
                     order_no=order_line.order_no,
                     line_no=order_line.line_no,
                     product_id=product.product_id,
-                    product_code=product.product_code,
+                    product_code=order_product_code(order_line, product),
+                    mes_product_code=product.product_code if product else None,
                     product_name=product.product_name,
                     cuts_per_sheet=group_item.cuts_per_sheet,
                     expected_output_qty=group_item.expected_output_qty,

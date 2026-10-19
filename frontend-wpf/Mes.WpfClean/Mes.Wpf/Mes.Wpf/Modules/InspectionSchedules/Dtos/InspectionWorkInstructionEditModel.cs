@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using Mes.Wpf.Core.Common;
 
 namespace Mes.Wpf.Modules.InspectionSchedules.Dtos
@@ -46,6 +46,9 @@ namespace Mes.Wpf.Modules.InspectionSchedules.Dtos
             set => SetProperty(ref _lotNo, value);
         }
 
+        private string? _mesProductCode;
+        public string? MesProductCode { get => _mesProductCode; set => SetProperty(ref _mesProductCode, value); }
+
         public string ProductCode
         {
             get => _productCode;
@@ -83,6 +86,7 @@ namespace Mes.Wpf.Modules.InspectionSchedules.Dtos
             OutsourceWorkGroupItemId = dto.OutsourceWorkGroupItemId;
             BundleNo = dto.BundleNo ?? string.Empty;
             LotNo = dto.LotNo ?? string.Empty;
+            MesProductCode = dto.MesProductCode;
             ProductCode = dto.ProductCode ?? string.Empty;
             ProductName = dto.ProductName ?? string.Empty;
             PartnerName = dto.PartnerName ?? string.Empty;
@@ -102,6 +106,7 @@ namespace Mes.Wpf.Modules.InspectionSchedules.Dtos
             BundleNo = string.Empty;
             LotNo = string.Empty;
             ProductCode = string.Empty;
+            MesProductCode = null;
             ProductName = string.Empty;
             PartnerName = string.Empty;
             InspectionDate = DateTime.Today;

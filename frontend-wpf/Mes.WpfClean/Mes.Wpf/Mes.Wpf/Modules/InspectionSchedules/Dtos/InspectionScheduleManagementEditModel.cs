@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using Mes.Wpf.Core.Common;
 
 namespace Mes.Wpf.Modules.InspectionSchedules.Dtos
@@ -65,6 +65,9 @@ namespace Mes.Wpf.Modules.InspectionSchedules.Dtos
             set => SetProperty(ref _partnerName, value);
         }
 
+        private string? _mesProductCode;
+        public string? MesProductCode { get => _mesProductCode; set => SetProperty(ref _mesProductCode, value); }
+
         public string ProductCode
         {
             get => _productCode;
@@ -93,6 +96,7 @@ namespace Mes.Wpf.Modules.InspectionSchedules.Dtos
             DaySeq = dto.DaySeq;
             DueDate = dto.DueDate;
             PartnerName = dto.PartnerName ?? string.Empty;
+            MesProductCode = dto.MesProductCode;
             ProductCode = dto.ProductCode ?? string.Empty;
             ProductName = dto.ProductName ?? string.Empty;
             Memo = dto.Memo ?? string.Empty;
@@ -109,6 +113,7 @@ namespace Mes.Wpf.Modules.InspectionSchedules.Dtos
             DueDate = null;
             PartnerName = string.Empty;
             ProductCode = string.Empty;
+            MesProductCode = null;
             ProductName = string.Empty;
             Memo = string.Empty;
         }

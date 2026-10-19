@@ -1,4 +1,4 @@
-﻿<UserControl x:Class="Mes.Wpf.Modules.InspectionSchedules.Views.InspectionScheduleManagementView"
+<UserControl x:Class="Mes.Wpf.Modules.InspectionSchedules.Views.InspectionScheduleManagementView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
@@ -325,6 +325,10 @@
                             </DataTemplate>
                         </DataGridTemplateColumn.CellTemplate>
                     </DataGridTemplateColumn>
+                    <DataGridTextColumn Header="품목코드" Binding="{Binding ProductCode}" Width="140"
+                                        ElementStyle="{StaticResource CenteredTextBlockStyle}" IsReadOnly="True"/>
+                    <DataGridTextColumn Header="MES 코드" Binding="{Binding MesProductCode}" Width="140"
+                                        ElementStyle="{StaticResource CenteredTextBlockStyle}" IsReadOnly="True"/>
                     <DataGridTemplateColumn Header="품목명" Width="200">
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>

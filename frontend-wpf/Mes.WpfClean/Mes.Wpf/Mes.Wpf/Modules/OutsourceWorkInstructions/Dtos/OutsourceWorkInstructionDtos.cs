@@ -1,4 +1,4 @@
-﻿using Mes.Wpf.Core.Common;
+using Mes.Wpf.Core.Common;
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
@@ -83,6 +83,9 @@ namespace Mes.Wpf.Modules.OutsourceWorkInstructions.Dtos
         [JsonPropertyName("product_code")]
         public string ProductCode { get; set; } = string.Empty;
 
+        [JsonPropertyName("mes_product_code")]
+        public string? MesProductCode { get; set; }
+
         [JsonPropertyName("product_name")]
         public string ProductName { get; set; } = string.Empty;
 
@@ -133,6 +136,7 @@ namespace Mes.Wpf.Modules.OutsourceWorkInstructions.Dtos
         public int LineNo { get; set; }
         public long ProductId { get; set; }
         public string ProductCode { get; set; } = string.Empty;
+        public string? MesProductCode { get; set; }
         public string ProductName { get; set; } = string.Empty;
         public long CustomerPartnerId { get; set; }
         public string? CustomerPartnerName { get; set; }
@@ -194,6 +198,7 @@ namespace Mes.Wpf.Modules.OutsourceWorkInstructions.Dtos
                 LineNo = dto.LineNo,
                 ProductId = dto.ProductId,
                 ProductCode = dto.ProductCode,
+                MesProductCode = dto.MesProductCode,
                 ProductName = dto.ProductName,
                 CustomerPartnerId = dto.CustomerPartnerId,
                 CustomerPartnerName = dto.CustomerPartnerName,
@@ -303,6 +308,9 @@ namespace Mes.Wpf.Modules.OutsourceWorkInstructions.Dtos
 
         [JsonPropertyName("product_code")]
         public string? ProductCode { get; set; }
+
+        [JsonPropertyName("mes_product_code")]
+        public string? MesProductCode { get; set; }
 
         [JsonPropertyName("product_name")]
         public string? ProductName { get; set; }
@@ -650,6 +658,9 @@ namespace Mes.Wpf.Modules.OutsourceWorkInstructions.Dtos
         [JsonPropertyName("product_code")]
         public string ProductCode { get; set; } = string.Empty;
 
+        [JsonPropertyName("mes_product_code")]
+        public string? MesProductCode { get; set; }
+
         [JsonPropertyName("product_name")]
         public string ProductName { get; set; } = string.Empty;
 
@@ -883,6 +894,8 @@ namespace Mes.Wpf.Modules.OutsourceWorkInstructions.Dtos
             public List<OutsourceWorkInstructionFileDto> Files { get; set; } = new();
 
             public string LotSummary => string.Join(Environment.NewLine, Items.Select(x => x.LotNo).Distinct());
+            public string ProductCodesText => string.Join(", ", Items.Select(x => x.ProductCode).Where(x => !string.IsNullOrWhiteSpace(x)).Distinct());
+            public string MesProductCodesText => string.Join(", ", Items.Select(x => x.MesProductCode).Where(x => !string.IsNullOrWhiteSpace(x)).Distinct());
             public int LotCount => Items.Select(x => x.LotNo).Distinct().Count();
             public int TotalQty => Items.Sum(x => x.LotQty);
 

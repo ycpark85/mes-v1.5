@@ -79,8 +79,13 @@ class OrderLineOut(OrderLineBase):
         # join으로 붙여주는 표시용 필드(조회 성능/UX)
     partner_name: Optional[str] = None
     product_code: Optional[str] = None
+    mes_product_code: Optional[str] = None
     product_name: Optional[str] = None
     drawing_no: Optional[str] = None
+
+    source_erp_product_code: Optional[str] = None
+    source_product_name: Optional[str] = None
+    source_product_spec: Optional[str] = None
 
     # OrderLineList 액션 버튼 분기용
     has_lot: bool = False
@@ -171,6 +176,10 @@ class OrderLineBulkValidateRowOut(BaseModel):
     product_code: str
     erp_product_display_name: str
     mes_product_display_name: Optional[str] = None
+    mes_product_code: Optional[str] = None
+    drawing_no: Optional[str] = None
+    mapping_id: Optional[int] = None
+    is_unprinted_managed: bool = False
 
     parsed_product_name: Optional[str] = None
     parsed_product_spec: Optional[str] = None
@@ -211,6 +220,8 @@ class OrderLineBulkValidateResult(BaseModel):
 
 class OrderLineBulkCommitRowChoice(BaseModel):
     row_number: int = Field(..., ge=1)
+    expected_product_id: Optional[int] = None
+    expected_mapping_id: Optional[int] = None
     apply_product_name_change: bool = False
 
 

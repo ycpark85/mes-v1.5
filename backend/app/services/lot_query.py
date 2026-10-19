@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from app.services.order_line_display import order_product_code
+
 from datetime import date
 from typing import Optional
 
@@ -71,7 +73,8 @@ def get_lot_detail(db: Session, lot_id: int) -> LotDetailOut:
         result.partner_name = partner.name if partner else None
 
     if product:
-        result.product_code = product.product_code
+        result.product_code = order_product_code(order_line, product)
+        result.mes_product_code = product.product_code
         result.product_name = product.product_name
 
     result.steps = [step for step in lot.steps]

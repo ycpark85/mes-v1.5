@@ -1,9 +1,10 @@
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from typing import Optional
 
 
 class ProductCreate(BaseModel):
-    product_code: str = Field(..., max_length=60)
+    product_code: Optional[str] = Field(None, max_length=60)
+    is_unprinted_managed: bool = False
     product_name: str = Field(..., max_length=200)
     uom: str = Field(..., max_length=10)
 
@@ -18,8 +19,20 @@ class ProductCreate(BaseModel):
     is_active: bool = True
     memo: Optional[str] = None
 
+    @model_validator(mode="after")
+    def validate_code_mode(self):
+        if self.is_unprinted_managed:
+            if self.product_code and self.product_code.strip():
+                raise ValueError("무지 별도관리 품목코드는 서버에서 자동 발급합니다.")
+        elif not self.product_code or not self.product_code.strip():
+            raise ValueError("product_code is required")
+        if not self.product_name.strip() or not self.uom.strip():
+            raise ValueError("product_name and uom are required")
+        return self
+
 
 class ProductUpdate(BaseModel):
+    is_unprinted_managed: Optional[bool] = None
     product_name: Optional[str] = Field(None, max_length=200)
     uom: Optional[str] = Field(None, max_length=10)
 
@@ -36,6 +49,7 @@ class ProductUpdate(BaseModel):
 
 
 class ProductOut(BaseModel):
+    is_unprinted_managed: bool = False
     product_id: int
     product_code: str
     product_name: str

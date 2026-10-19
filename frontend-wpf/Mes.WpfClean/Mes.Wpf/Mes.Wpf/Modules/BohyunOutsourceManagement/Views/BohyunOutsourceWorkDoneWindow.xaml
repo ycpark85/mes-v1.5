@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="보현문화 작업완료"
         Width="560"
-        Height="560"
+        Height="620"
         WindowStartupLocation="CenterOwner"
         ResizeMode="NoResize">
     <Grid Margin="20">
@@ -33,6 +33,8 @@
                      IsReadOnly="True"
                      Margin="0,0,0,10"/>
 
+            <TextBlock Text="{Binding EditModel.ProductCodesText, StringFormat=품목코드: {0}}" TextWrapping="Wrap" Margin="0,0,0,4"/>
+            <TextBlock Text="{Binding EditModel.MesProductCodesText, StringFormat=MES 코드: {0}}" TextWrapping="Wrap" Foreground="#64748B" Margin="0,0,0,10"/>
             <TextBlock Text="품목명"/>
             <TextBox Text="{Binding EditModel.ProductNamesText}"
                      IsReadOnly="True"

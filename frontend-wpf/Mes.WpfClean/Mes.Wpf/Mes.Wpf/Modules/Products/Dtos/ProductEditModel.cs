@@ -1,10 +1,17 @@
-﻿using Mes.Wpf.Core.Common;
+using Mes.Wpf.Core.Common;
 using System;
 
 namespace Mes.Wpf.Modules.Products.Dtos
 {
     public class ProductEditModel : ViewModelBase
     {
+        private bool _isUnprintedManaged;
+        public bool IsUnprintedManaged
+        {
+            get => _isUnprintedManaged;
+            set => SetProperty(ref _isUnprintedManaged, value);
+        }
+
         private string _productCode = string.Empty;
         private string _productName = string.Empty;
         private string _uom = string.Empty;
@@ -85,6 +92,7 @@ namespace Mes.Wpf.Modules.Products.Dtos
 
         public void LoadFromDto(ProductDto dto)
         {
+            IsUnprintedManaged = dto.IsUnprintedManaged;
             ProductCode = dto.ProductCode ?? string.Empty;
             ProductName = dto.ProductName ?? string.Empty;
             Uom = dto.Uom ?? string.Empty;
@@ -100,6 +108,7 @@ namespace Mes.Wpf.Modules.Products.Dtos
 
         public void Clear()
         {
+            IsUnprintedManaged = false;
             ProductCode = string.Empty;
             ProductName = string.Empty;
             Uom = string.Empty;

@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using System.Text.Json.Serialization;
 
 namespace Mes.Wpf.Modules.OutsourceWorkInstructions.Dtos
@@ -169,6 +169,9 @@ namespace Mes.Wpf.Modules.OutsourceWorkInstructions.Dtos
 
         [JsonPropertyName("product_code")]
         public string? ProductCode { get; set; }
+
+        [JsonPropertyName("mes_product_code")]
+        public string? MesProductCode { get; set; }
 
         [JsonPropertyName("product_name")]
         public string? ProductName { get; set; }

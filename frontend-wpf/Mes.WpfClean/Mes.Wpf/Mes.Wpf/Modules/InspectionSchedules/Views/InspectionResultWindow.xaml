@@ -158,12 +158,21 @@
                         </Grid>
 
                         <Grid Grid.Row="4">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="90"/>
                                 <ColumnDefinition Width="*"/>
                             </Grid.ColumnDefinitions>
-                            <TextBlock Grid.Column="0" Style="{StaticResource LabelTextStyle}" Text="품목명"/>
-                            <TextBlock Grid.Column="1" Style="{StaticResource ValueTextStyle}" Text="{Binding ProductName}"/>
+                            <TextBlock Grid.Row="0" Style="{StaticResource LabelTextStyle}" Text="품목코드"/>
+                            <TextBlock Grid.Row="0" Grid.Column="1" Style="{StaticResource ValueTextStyle}" Text="{Binding ProductCode}" TextWrapping="Wrap"/>
+                            <TextBlock Grid.Row="1" Margin="0,8,0,0" Style="{StaticResource LabelTextStyle}" Text="MES 코드" Foreground="#64748B"/>
+                            <TextBlock Grid.Row="1" Grid.Column="1" Margin="0,8,0,0" Style="{StaticResource ValueTextStyle}" Text="{Binding MesProductCode}" Foreground="#64748B" TextWrapping="Wrap"/>
+                            <TextBlock Grid.Row="2" Margin="0,8,0,0" Style="{StaticResource LabelTextStyle}" Text="품목명"/>
+                            <TextBlock Grid.Row="2" Grid.Column="1" Margin="0,8,0,0" Style="{StaticResource ValueTextStyle}" Text="{Binding ProductName}" TextWrapping="Wrap"/>
                         </Grid>
 
                         <Grid Grid.Row="6">

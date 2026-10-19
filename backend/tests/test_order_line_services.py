@@ -74,6 +74,7 @@ def _compile_jsonb_for_sqlite(_type, compiler, **kw):
 
 
 TEST_TABLE_NAMES = [
+    "partner_product_mapping",
     "partner",
     "drawing",
     "drawing_revision",

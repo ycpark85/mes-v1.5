@@ -183,6 +183,8 @@
                     <DataGridTextColumn Header="실적구분" Width="82" Binding="{Binding ResultTypeDisplay}" ElementStyle="{StaticResource CellTextStyle}"/>
                     <DataGridTextColumn Header="LOT" Width="112" Binding="{Binding LotNo}" ElementStyle="{StaticResource CellTextStyle}"/>
                     <DataGridTextColumn Header="고객사" Width="170" Binding="{Binding PartnerName}" ElementStyle="{StaticResource CellTextStyle}"/>
+                    <DataGridTextColumn Header="품목코드" Width="140" Binding="{Binding ProductCode}" ElementStyle="{StaticResource CellTextStyle}"/>
+                    <DataGridTextColumn Header="MES 코드" Width="140" Binding="{Binding MesProductCode}" ElementStyle="{StaticResource CellTextStyle}"/>
                     <DataGridTextColumn Header="품목명" Width="230" Binding="{Binding ProductName}" ElementStyle="{StaticResource CellTextStyle}"/>
                     <DataGridTextColumn Header="발주수량" Width="90" Binding="{Binding OrderQty, StringFormat={}{0:N0}}" ElementStyle="{StaticResource CellTextStyle}"/>
                     <DataGridTextColumn Header="양품수량" Width="90" Binding="{Binding GoodQty, StringFormat={}{0:N0}}" ElementStyle="{StaticResource CellTextStyle}"/>

@@ -35,6 +35,9 @@ class Product(Base):
     product_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     product_code: Mapped[str] = mapped_column(String(60), nullable=False)
     product_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    is_unprinted_managed: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
 
     uom: Mapped[str] = mapped_column(String(10), nullable=False)  # EA 등
 

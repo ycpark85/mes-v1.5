@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Text.Json.Serialization;
 
@@ -24,8 +24,18 @@ namespace Mes.Wpf.Modules.OrderLineList.Dtos
         [JsonPropertyName("product_id")]
         public long ProductId { get; set; }
 
+        [JsonPropertyName("source_erp_product_code")]
+        public string? SourceErpProductCode { get; set; }
+        [JsonPropertyName("source_product_name")]
+        public string? SourceProductName { get; set; }
+        [JsonPropertyName("source_product_spec")]
+        public string? SourceProductSpec { get; set; }
+
         [JsonPropertyName("product_code")]
         public string ProductCode { get; set; } = string.Empty;
+
+        [JsonPropertyName("mes_product_code")]
+        public string? MesProductCode { get; set; }
 
         [JsonPropertyName("product_name")]
         public string ProductName { get; set; } = string.Empty;

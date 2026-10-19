@@ -50,6 +50,7 @@
                 <StackPanel Margin="0,0,16,8">
                     <TextBlock FontWeight="SemiBold" Text="품목코드"/>
                     <TextBlock Margin="0,4,0,0" Text="{Binding EditModel.ProductCode}"/>
+                    <TextBlock Margin="0,4,0,0" Foreground="#64748B" Text="{Binding EditModel.MesProductCode, StringFormat=MES 코드: {0}}"/>
                 </StackPanel>
 
                 <StackPanel Margin="0,0,16,8">
@@ -151,9 +152,10 @@
                                Grid.Column="0"
                                VerticalAlignment="Center"
                                Text="품목코드"/>
-                    <TextBlock Grid.Row="0"
-                               Grid.Column="1"
-                               Text="{Binding EditModel.ProductCode}"/>
+                    <StackPanel Grid.Row="0" Grid.Column="1">
+                        <TextBlock Text="{Binding EditModel.ProductCode}"/>
+                        <TextBlock Margin="0,4,0,0" Foreground="#64748B" Text="{Binding EditModel.MesProductCode, StringFormat=MES 코드: {0}}"/>
+                    </StackPanel>
 
                     <TextBlock Grid.Row="2"
                                Grid.Column="0"

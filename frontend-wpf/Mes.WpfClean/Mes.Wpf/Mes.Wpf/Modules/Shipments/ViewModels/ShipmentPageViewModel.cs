@@ -261,6 +261,7 @@ namespace Mes.Wpf.Modules.Shipments.ViewModels
                         OrderNo = first.OrderNo,
                         PartnerName = first.PartnerName,
                         ProductCode = first.ProductCode,
+                        MesProductCode = first.MesProductCode,
                         ProductName = first.ProductName,
                         Status = first.Status,
 

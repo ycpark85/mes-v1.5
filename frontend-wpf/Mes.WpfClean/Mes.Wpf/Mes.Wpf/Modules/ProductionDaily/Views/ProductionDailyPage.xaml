@@ -103,11 +103,12 @@
                                     Binding="{Binding PartnerName}"
                                     Width="180"
                                     ElementStyle="{StaticResource LeftTextStyle}"/>
-                <DataGridTextColumn Header="품목"
+                <DataGridTextColumn Header="품목코드 / 품목명"
                                     Binding="{Binding ProductDisplay}"
                                     Width="*"
                                     MinWidth="260"
                                     ElementStyle="{StaticResource LeftTextStyle}"/>
+                <DataGridTextColumn Header="MES 코드" Binding="{Binding MesProductCode}" Width="140" ElementStyle="{StaticResource LeftTextStyle}"/>
                 <DataGridTextColumn Header="발주수량"
                                     Binding="{Binding OrderQty, StringFormat={}{0:N0}}"
                                     Width="100"

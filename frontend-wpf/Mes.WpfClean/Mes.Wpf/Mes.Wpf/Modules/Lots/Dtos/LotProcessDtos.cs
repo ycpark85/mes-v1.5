@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Text.Json.Serialization;
 using Mes.Wpf.Core.Common;
@@ -90,6 +90,9 @@ public class LotListItemDto
         [JsonPropertyName("product_code")]
         public string ProductCode { get; set; } = string.Empty;
 
+        [JsonPropertyName("mes_product_code")]
+        public string? MesProductCode { get; set; }
+
         [JsonPropertyName("product_name")]
         public string ProductName { get; set; } = string.Empty;
 
@@ -152,6 +155,9 @@ public class LotListItemDto
 
         [JsonPropertyName("product_code")]
         public string ProductCode { get; set; } = string.Empty;
+
+        [JsonPropertyName("mes_product_code")]
+        public string? MesProductCode { get; set; }
 
         [JsonPropertyName("product_name")]
         public string ProductName { get; set; } = string.Empty;

@@ -1,4 +1,4 @@
-﻿using Mes.Wpf.Core.Common;
+using Mes.Wpf.Core.Common;
 using System;
 
 namespace Mes.Wpf.Modules.Lots.Dtos
@@ -59,6 +59,9 @@ namespace Mes.Wpf.Modules.Lots.Dtos
             get => _partnerName;
             set => SetProperty(ref _partnerName, value);
         }
+
+        private string? _mesProductCode;
+        public string? MesProductCode { get => _mesProductCode; set => SetProperty(ref _mesProductCode, value); }
 
         public string ProductCode
         {
@@ -250,6 +253,7 @@ namespace Mes.Wpf.Modules.Lots.Dtos
             OrderLineId = dto.OrderLineId;
             OrderNo = dto.OrderNo;
             PartnerName = dto.PartnerName;
+            MesProductCode = dto.MesProductCode;
             ProductCode = dto.ProductCode;
             ProductName = dto.ProductName;
             OrderQty = dto.OrderQty;
@@ -304,6 +308,7 @@ namespace Mes.Wpf.Modules.Lots.Dtos
             OrderNo = string.Empty;
             PartnerName = string.Empty;
             ProductCode = string.Empty;
+            MesProductCode = null;
             ProductName = string.Empty;
             OrderQty = 0;
             Uom = string.Empty;

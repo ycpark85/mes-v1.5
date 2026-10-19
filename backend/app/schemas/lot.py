@@ -67,6 +67,7 @@ class LotOut(BaseModel):
     partner_id: Optional[int] = None
     partner_name: Optional[str] = None
     product_code: Optional[str] = None
+    mes_product_code: str | None = None
     product_name: Optional[str] = None
 
      # LOT 리스트 화면용
@@ -124,6 +125,7 @@ class LotTraceProductOrderOut(BaseModel):
     partner_name: Optional[str] = None
     product_id: int
     product_code: str
+    mes_product_code: str | None = None
     product_name: str
     product_spec: Optional[str] = None
     panel_width_mm: Optional[int] = None

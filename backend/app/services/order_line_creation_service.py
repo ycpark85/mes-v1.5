@@ -30,6 +30,7 @@ from app.services.order_line_plan_service import (
 )
 from app.services.order_line_plan_policy import evaluate_order_line_plan_policy
 from app.services.production_daily_query import refresh_order_line_snapshot
+from app.services.partner_product_mapping_service import manual_order_source
 from app.services.ship_qty_policy import calculate_ship_qty, is_stock_replenishment_partner
 
 
@@ -41,7 +42,8 @@ def ensure_partner_active(db: Session, partner_id: int) -> Partner:
 
 
 def ensure_product_active(db: Session, product_id: int) -> Product:
-    product = db.get(Product, product_id)
+    product = db.scalar(select(Product).where(Product.product_id == product_id).with_for_update(read=True)
+                        .execution_options(populate_existing=True))
     if not product or not product.is_active:
         raise HTTPException(status_code=404, detail="Product not found or inactive")
     return product
@@ -198,12 +200,13 @@ def create_primary_lot_for_order_line(
     raise HTTPException(status_code=409, detail="Failed to generate unique lot_no (retry exceeded)")
 
 
-def create_order_line_with_policy(db: Session, payload: OrderLineCreate) -> OrderLine:
+def create_order_line_with_policy(db: Session, payload: OrderLineCreate, *, erp_source: dict | None = None) -> OrderLine:
     partner = ensure_partner_active(db, payload.partner_id)
     product = ensure_product_active(db, payload.product_id)
 
     data = payload.model_dump()
     data["uom"] = product.uom
+    data.update(erp_source if erp_source is not None else manual_order_source(db, product, payload.partner_id))
 
     obj = OrderLine(**data)
 

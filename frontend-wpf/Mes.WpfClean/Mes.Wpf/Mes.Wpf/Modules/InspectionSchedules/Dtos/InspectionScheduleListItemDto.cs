@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Text.Json.Serialization;
 
 namespace Mes.Wpf.Modules.InspectionSchedules.Dtos
@@ -54,6 +54,9 @@ namespace Mes.Wpf.Modules.InspectionSchedules.Dtos
 
         [JsonPropertyName("product_code")]
         public string ProductCode { get; set; } = string.Empty;
+
+        [JsonPropertyName("mes_product_code")]
+        public string? MesProductCode { get; set; }
 
         [JsonPropertyName("product_name")]
         public string ProductName { get; set; } = string.Empty;

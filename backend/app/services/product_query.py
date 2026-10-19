@@ -7,6 +7,7 @@ from app.models.drawing import Drawing
 from app.models.order_line import OrderLine
 from app.models.partner import Partner
 from app.models.product import Product
+from app.models.partner_product_mapping import PartnerProductMapping
 from app.models.product_inventory import ProductInventory
 from app.models.routing_template import RoutingTemplate
 from app.schemas.product import ProductOut
@@ -20,11 +21,15 @@ def list_products_for_grid(
     q: str | None,
     partner_q: str | None,
     is_active: bool | None,
+    is_unprinted_managed: bool | None = None,
 ) -> tuple[list[ProductOut], int]:
     filters = []
 
     if is_active is not None:
         filters.append(Product.is_active == is_active)
+
+    if is_unprinted_managed is not None:
+        filters.append(Product.is_unprinted_managed == is_unprinted_managed)
 
     normalized_q = (q or "").strip()
     if normalized_q:
@@ -33,6 +38,11 @@ def list_products_for_grid(
             or_(
                 Product.product_code.ilike(keyword),
                 Product.product_name.ilike(keyword),
+                exists(select(PartnerProductMapping.mapping_id).where(
+                    PartnerProductMapping.product_id == Product.product_id,
+                    PartnerProductMapping.is_active.is_(True),
+                    or_(PartnerProductMapping.erp_product_code.ilike(keyword),
+                        PartnerProductMapping.customer_product_name.ilike(keyword)))),
             )
         )
 
@@ -52,7 +62,12 @@ def list_products_for_grid(
             )
             .limit(1)
         )
-        filters.append(exists(matching_order_line))
+        matching_mapping = select(PartnerProductMapping.mapping_id).join(
+            Partner, Partner.partner_id == PartnerProductMapping.partner_id).where(
+                PartnerProductMapping.product_id == Product.product_id,
+                PartnerProductMapping.is_active.is_(True),
+                or_(Partner.name.ilike(partner_keyword), Partner.business_no.ilike(partner_keyword)))
+        filters.append(or_(exists(matching_order_line), exists(matching_mapping)))
 
     total = db.execute(
         select(func.count())

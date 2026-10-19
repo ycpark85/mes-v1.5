@@ -1,9 +1,13 @@
-﻿using System.Text.Json.Serialization;
+using System.Text.Json.Serialization;
 
 namespace Mes.Wpf.Modules.Products.Dtos
 {
     public class ProductDto
     {
+        [JsonPropertyName("is_unprinted_managed")]
+        public bool IsUnprintedManaged { get; set; }
+        public string ManagementDisplay => IsUnprintedManaged ? "무지 별도관리" : "기존 방식";
+
         [JsonPropertyName("product_id")]
         public long ProductId { get; set; }
 

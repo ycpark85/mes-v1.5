@@ -57,6 +57,12 @@ namespace Mes.Wpf.Modules.OutsourceWorkInstructions.Dtos
         [JsonPropertyName("product_names_text")]
         public string ProductNamesText { get; set; } = string.Empty;
 
+        [JsonPropertyName("product_codes_text")]
+        public string ProductCodesText { get; set; } = string.Empty;
+
+        [JsonPropertyName("mes_product_codes_text")]
+        public string MesProductCodesText { get; set; } = string.Empty;
+
         [JsonPropertyName("sheet_qty")]
         public int SheetQty { get; set; }
 
@@ -109,6 +115,9 @@ namespace Mes.Wpf.Modules.OutsourceWorkInstructions.Dtos
 
         [JsonPropertyName("product_code")]
         public string? ProductCode { get; set; }
+
+        [JsonPropertyName("mes_product_code")]
+        public string? MesProductCode { get; set; }
 
         [JsonPropertyName("product_name")]
         public string? ProductName { get; set; }

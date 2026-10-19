@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from app.services.order_line_display import order_product_code
+
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -159,8 +161,12 @@ def build_order_line_detail_dto(
         partner_id=order_line.partner_id,
         partner_name=partner.name if partner else "",
         product_id=order_line.product_id,
-        product_code=product.product_code if product else "",
-        product_name=product.product_name if product else "",
+        product_code=order_product_code(order_line, product),
+        mes_product_code=product.product_code if product else None,
+        product_name=order_line.source_product_name or (product.product_name if product else ""),
+        source_erp_product_code=order_line.source_erp_product_code,
+        source_product_name=order_line.source_product_name,
+        source_product_spec=order_line.source_product_spec,
         order_date=order_line.order_date,
         due_date=order_line.due_date,
         order_qty=order_line.order_qty,

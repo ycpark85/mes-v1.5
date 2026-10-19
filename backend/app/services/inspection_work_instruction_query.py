@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from sqlalchemy import exists, select
+from sqlalchemy import exists, func, select
 from sqlalchemy.orm import Session
 
 from app.models.drawing import Drawing
@@ -21,6 +21,7 @@ from app.schemas.inspection_schedule import (
     InspectionWorkInstructionTargetListOut,
     InspectionWorkInstructionTargetOut,
 )
+from app.services.order_line_display import order_product_code
 from app.services.routing_policy import is_inspection_only_template_name
 from app.services.ship_qty_policy import calculate_ship_qty
 
@@ -68,7 +69,8 @@ def list_inspection_schedule_items(
             InspectionSchedule.day_seq,
             Lot.due_date,
             Partner.name.label("partner_name"),
-            Product.product_code,
+            func.coalesce(OrderLine.source_erp_product_code, Product.product_code).label("product_code"),
+            Product.product_code.label("mes_product_code"),
             Product.product_name,
             Product.product_spec,
             Product.drawing_id,
@@ -116,7 +118,7 @@ def list_inspection_schedule_items(
     if product_q:
         stmt = stmt.where(
             (Product.product_name.ilike(f"%{product_q}%"))
-            | (Product.product_code.ilike(f"%{product_q}%"))
+            | ((Product.product_code.ilike(f"%{product_q}%") | OrderLine.source_erp_product_code.ilike(f"%{product_q}%")))
         )
 
     stmt = (
@@ -174,7 +176,8 @@ def list_inspection_work_instruction_targets(
             OutsourceWorkGroup.group_seq,
             OutsourceWorkGroup.is_bundle,
             OutsourceWorkInstruction.instruction_no,
-            Product.product_code,
+            func.coalesce(OrderLine.source_erp_product_code, Product.product_code).label("product_code"),
+            Product.product_code.label("mes_product_code"),
             Product.product_name,
             Partner.name.label("partner_name"),
             Lot.lot_qty,
@@ -218,7 +221,7 @@ def list_inspection_work_instruction_targets(
     if product_q:
         like = f"%{product_q.strip()}%"
         stmt = stmt.where(
-            (Product.product_code.ilike(like))
+            ((Product.product_code.ilike(like) | OrderLine.source_erp_product_code.ilike(like)))
             | (Product.product_name.ilike(like))
             | (Lot.lot_no.ilike(like))
         )
@@ -256,6 +259,7 @@ def list_inspection_work_instruction_targets(
                 outsource_work_group_item_id=row_dict["outsource_work_group_item_id"],
                 bundle_no=bundle_no,
                 product_code=row_dict.get("product_code"),
+                mes_product_code=row_dict.get("mes_product_code"),
                 product_name=row_dict.get("product_name"),
                 partner_name=row_dict.get("partner_name"),
                 lot_qty=row_dict["lot_qty"],
@@ -296,7 +300,7 @@ def list_inspection_work_instruction_targets(
     if product_q:
         like = f"%{product_q.strip()}%"
         inspection_only_stmt = inspection_only_stmt.where(
-            (Product.product_code.ilike(like))
+            ((Product.product_code.ilike(like) | OrderLine.source_erp_product_code.ilike(like)))
             | (Product.product_name.ilike(like))
             | (Lot.lot_no.ilike(like))
         )
@@ -327,7 +331,8 @@ def list_inspection_work_instruction_targets(
                 outsource_work_group_id=None,
                 outsource_work_group_item_id=None,
                 bundle_no=None,
-                product_code=product.product_code,
+                product_code=order_product_code(order_line, product),
+                mes_product_code=product.product_code,
                 product_name=product.product_name,
                 partner_name=partner.name,
                 lot_qty=lot.lot_qty,

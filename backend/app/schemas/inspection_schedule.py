@@ -68,6 +68,7 @@ class InspectionScheduleListItemOut(BaseModel):
     due_date: date
     partner_name: str
     product_code: str
+    mes_product_code: str | None = None
     product_name: str
     product_spec: Optional[str] = None
     lot_qty: int
@@ -84,6 +85,7 @@ class InspectionWorkInstructionTargetOut(BaseModel):
     bundle_no: Optional[str] = None
 
     product_code: Optional[str] = None
+    mes_product_code: str | None = None
     product_name: Optional[str] = None
     partner_name: Optional[str] = None
 

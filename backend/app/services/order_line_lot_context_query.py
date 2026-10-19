@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from app.services.order_line_display import order_product_code
+
 from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -43,7 +45,8 @@ def get_lot_create_context_dto(db: Session, order_line_id: int) -> LotCreateCont
         partner_id=order_line.partner_id,
         partner_name=partner.name,
         product_id=product.product_id,
-        product_code=product.product_code,
+        product_code=order_product_code(order_line, product),
+        mes_product_code=product.product_code if product else None,
         product_name=product.product_name,
         order_qty=order_line.order_qty,
         uom=order_line.uom,

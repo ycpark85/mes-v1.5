@@ -27,6 +27,7 @@ from app.schemas.order_line import (
     OrderLineBulkValidateRowOut,
 )
 from app.services.order_line_creation_service import create_order_line_with_policy
+from app.services.partner_product_mapping_service import resolve_erp_product
 
 
 _ORDER_NO_PATTERN = re.compile(r"^\s*(\d{4}/\d{2}/\d{2})\s*-\s*\d+\s*$")
@@ -53,6 +54,10 @@ class _ResolvedRow:
 
     product_id: Optional[int] = None
     mes_product_display_name: Optional[str] = None
+    mes_product_code: Optional[str] = None
+    drawing_no: Optional[str] = None
+    mapping_id: Optional[int] = None
+    is_unprinted_managed: bool = False
 
     parsed_product_name: Optional[str] = None
     parsed_product_spec: Optional[str] = None
@@ -101,6 +106,8 @@ class OrderLineBulkService:
             for item in payload.row_choices
         }
 
+        expected = {item.row_number: item for item in payload.row_choices}
+
         results: list[OrderLineBulkCommitGroupResult] = []
         success_group_count = 0
         failure_group_count = 0
@@ -133,6 +140,16 @@ class OrderLineBulkService:
                                 detail=f"row_number={row.row_number} 검증 오류로 등록할 수 없습니다.",
                             )
 
+                        product, mapping = resolve_erp_product(db, row.partner_id, row.product_code, lock=True)
+                        if product.product_id != row.product_id or (mapping.mapping_id if mapping else None) != row.mapping_id:
+                            raise HTTPException(status_code=409, detail="품목 연결이 변경되었습니다. 다시 검증하세요.")
+                        choice = expected.get(row.row_number)
+                        if mapping and (choice is None or choice.expected_product_id != product.product_id
+                                        or choice.expected_mapping_id != mapping.mapping_id):
+                            raise HTTPException(status_code=409, detail="무지 품목 연결을 다시 검증한 후 등록하세요.")
+                        if choice and choice.expected_product_id is not None and choice.expected_product_id != product.product_id:
+                            raise HTTPException(status_code=409, detail="검증 후 품목 연결이 변경되었습니다. 다시 검증하세요.")
+
                         if choice_map.get(row.row_number, False) and row.product_name_mismatch:
                             product = db.get(Product, row.product_id)
                             if product is None or not product.is_active:
@@ -161,7 +178,12 @@ class OrderLineBulkService:
                             memo=group_memo,
                         )
 
-                        created = create_order_line_with_policy(db, create_payload)
+                        source = None
+                        if mapping:
+                            source = dict(source_erp_product_code=row.product_code,
+                                          source_product_name=row.parsed_product_name,
+                                          source_product_spec=row.parsed_product_spec)
+                        created = create_order_line_with_policy(db, create_payload, erp_source=source)
                         created_ids.append(created.order_line_id)
 
                 success_group_count += 1
@@ -334,6 +356,9 @@ class OrderLineBulkService:
             if not choice_map.get(row.row_number, False):
                 continue
 
+            if row.is_unprinted_managed:
+                raise HTTPException(status_code=409, detail="무지 품목은 거래처 품명으로 공통 품목명을 변경할 수 없습니다.")
+
             if not row.product_name_mismatch:
                 continue
 
@@ -379,24 +404,27 @@ class OrderLineBulkService:
         row.partner_name = partner.name
 
     def _resolve_product(self, db: Session, row: _ResolvedRow) -> None:
-        product = db.execute(
-            select(Product)
-            .where(
-                Product.is_active == True,
-                Product.product_code == row.product_code,
-            )
-        ).scalar_one_or_none()
-
-        if product is None:
-            row.messages.append(self._err("product_code", "MES 품목코드 매핑 실패"))
+        try:
+            product, mapping = resolve_erp_product(db, row.partner_id, row.product_code)
+        except HTTPException as exc:
+            row.messages.append(self._err("product_code", str(exc.detail)))
             return
 
+        row.is_unprinted_managed = product.is_unprinted_managed
+        row.mapping_id = mapping.mapping_id if mapping else None
+        row.mes_product_code = product.product_code
+        row.drawing_no = product.drawing.drawing_no if product.drawing else None
         row.product_id = int(product.product_id)
         row.mes_product_display_name = self._build_mes_product_display_name(product)
 
         parsed_name, parsed_spec = self._split_erp_product_display_name(row.erp_product_display_name)
         row.parsed_product_name = parsed_name
         row.parsed_product_spec = parsed_spec
+
+        if row.is_unprinted_managed:
+            if not parsed_name or len(parsed_name) > 200 or (parsed_spec and len(parsed_spec) > 100):
+                row.messages.append(self._err("erp_product_display_name", "무지 수주 품명은 1~200자, 규격은 100자 이내여야 합니다."))
+            return
 
         if self._normalize_text(row.erp_product_display_name) != self._normalize_text(row.mes_product_display_name):
             row.product_name_mismatch = True
@@ -544,6 +572,10 @@ class OrderLineBulkService:
             product_code=row.product_code,
             erp_product_display_name=row.erp_product_display_name,
             mes_product_display_name=row.mes_product_display_name,
+            mes_product_code=row.mes_product_code,
+            drawing_no=row.drawing_no,
+            mapping_id=row.mapping_id,
+            is_unprinted_managed=row.is_unprinted_managed,
             parsed_product_name=row.parsed_product_name,
             parsed_product_spec=row.parsed_product_spec,
             order_qty=row.order_qty,

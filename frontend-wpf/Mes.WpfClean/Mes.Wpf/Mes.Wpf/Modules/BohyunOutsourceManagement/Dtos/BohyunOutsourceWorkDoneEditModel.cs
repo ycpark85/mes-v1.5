@@ -9,6 +9,11 @@ namespace Mes.Wpf.Modules.BohyunOutsourceManagement.Dtos
         private string _workTypeName = string.Empty;
         private string _lotNosText = string.Empty;
         private string _productNamesText = string.Empty;
+        private string _productCodesText = string.Empty;
+        private string _mesProductCodesText = string.Empty;
+
+        public string ProductCodesText { get => _productCodesText; set => SetProperty(ref _productCodesText, value); }
+        public string MesProductCodesText { get => _mesProductCodesText; set => SetProperty(ref _mesProductCodesText, value); }
         private int? _sheetQty;
         private int? _workDoneSheetQty;
         private decimal? _outsourceProcessingFee;
@@ -75,6 +80,8 @@ namespace Mes.Wpf.Modules.BohyunOutsourceManagement.Dtos
             WorkTypeName = row.WorkTypeName;
             LotNosText = row.LotNosText;
             ProductNamesText = row.ProductNamesText;
+            ProductCodesText = row.ProductCodesText;
+            MesProductCodesText = row.MesProductCodesText;
             SheetQty = row.SheetQty;
             WorkDoneSheetQty = row.WorkDoneSheetQty ?? row.SheetQty;
             OutsourceProcessingFee = row.OutsourceProcessingFee;
@@ -88,6 +95,8 @@ namespace Mes.Wpf.Modules.BohyunOutsourceManagement.Dtos
             WorkTypeName = string.Empty;
             LotNosText = string.Empty;
             ProductNamesText = string.Empty;
+            ProductCodesText = string.Empty;
+            MesProductCodesText = string.Empty;
             SheetQty = null;
             WorkDoneSheetQty = null;
             OutsourceProcessingFee = null;

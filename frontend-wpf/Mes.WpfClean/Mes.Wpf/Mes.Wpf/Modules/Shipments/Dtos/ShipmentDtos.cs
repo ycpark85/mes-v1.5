@@ -1,4 +1,4 @@
-﻿using Mes.Wpf.Core.Common;
+using Mes.Wpf.Core.Common;
 using System;
 using System.Collections.ObjectModel;
 using System.Text.Json.Serialization;
@@ -48,6 +48,9 @@ namespace Mes.Wpf.Modules.Shipments.Dtos
 
         [JsonPropertyName("product_code")]
         public string? ProductCode { get; set; }
+
+        [JsonPropertyName("mes_product_code")]
+        public string? MesProductCode { get; set; }
 
         [JsonPropertyName("product_name")]
         public string? ProductName { get; set; }
@@ -158,6 +161,8 @@ namespace Mes.Wpf.Modules.Shipments.Dtos
         public string? PartnerName { get; set; }
 
         public string? ProductCode { get; set; }
+
+        public string? MesProductCode { get; set; }
 
         public string? ProductName { get; set; }
 

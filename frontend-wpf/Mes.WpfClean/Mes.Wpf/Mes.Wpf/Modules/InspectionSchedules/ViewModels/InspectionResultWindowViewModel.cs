@@ -157,6 +157,11 @@ namespace Mes.Wpf.Modules.InspectionSchedules.ViewModels
             set => SetProperty(ref _lotNo, value);
         }
 
+        private string _productCode = string.Empty;
+        public string ProductCode { get => _productCode; set => SetProperty(ref _productCode, value); }
+        private string _mesProductCode = string.Empty;
+        public string MesProductCode { get => _mesProductCode; set => SetProperty(ref _mesProductCode, value); }
+
         public string ProductName
         {
             get => _productName;
@@ -679,6 +684,8 @@ namespace Mes.Wpf.Modules.InspectionSchedules.ViewModels
                 }
 
                 var response = result.Data;
+                ProductCode = response.ProductCode ?? string.Empty;
+                MesProductCode = response.MesProductCode ?? string.Empty;
                 if (!CanEdit && response.Inventory.ViewMode != "saved")
                 {
                     _loadFailed = true;

@@ -36,6 +36,7 @@ def list_shipments_for_grid(
             OrderLine.order_qty.label("order_qty"),
             Partner.name.label("partner_name"),
             Product.product_code.label("product_code"),
+            OrderLine.source_erp_product_code,
             Product.product_name.label("product_name"),
             Lot.lot_no.label("lot_no"),
         )
@@ -64,6 +65,7 @@ def list_shipments_for_grid(
             OrderLine.order_no == normalized_q.upper(),
             Partner.name.ilike(keyword),
             Product.product_code.ilike(keyword),
+            OrderLine.source_erp_product_code.ilike(keyword),
             Product.product_name.ilike(keyword),
             Lot.lot_no.ilike(keyword),
             ShipmentLine.stock_lot_no.ilike(keyword),
@@ -138,7 +140,7 @@ def list_shipments_for_grid(
 
     items: list[ShipmentLineOut] = []
 
-    for shipment_line, order_no, order_qty, partner_name, product_code, product_name, lot_no in rows:
+    for shipment_line, order_no, order_qty, partner_name, product_code, source_code, product_name, lot_no in rows:
         display_lot_no = shipment_line.stock_lot_no if shipment_line.source_type == "STOCK" else lot_no
 
         ship_target_qty = int(calculate_ship_qty(partner_name or "", int(order_qty or 0)) or 0)
@@ -159,7 +161,8 @@ def list_shipments_for_grid(
                 order_no=order_no,
                 partner_name=partner_name,
                 product_id=shipment_line.product_id,
-                product_code=product_code,
+                product_code=source_code or product_code,
+                mes_product_code=product_code,
                 product_name=product_name,
                 product_inventory_lot_id=shipment_line.product_inventory_lot_id,
                 stock_lot_no=shipment_line.stock_lot_no,

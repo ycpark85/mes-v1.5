@@ -137,6 +137,7 @@ namespace Mes.Wpf.Modules.LotDetails.ViewModels
         }
 
         public string PartnerName => Detail?.ProductOrder.PartnerName ?? "-";
+        public string MesProductCode => Detail?.ProductOrder.MesProductCode ?? "-";
         public string ProductCode => Detail?.ProductOrder.ProductCode ?? "-";
         public string ProductName => Detail?.ProductOrder.ProductName ?? "-";
         public string ProductSpec => Detail?.ProductOrder.ProductSpec ?? "-";
@@ -332,6 +333,7 @@ namespace Mes.Wpf.Modules.LotDetails.ViewModels
 
             OnPropertyChanged(nameof(PartnerName));
             OnPropertyChanged(nameof(ProductCode));
+            OnPropertyChanged(nameof(MesProductCode));
             OnPropertyChanged(nameof(ProductName));
             OnPropertyChanged(nameof(ProductSpec));
             OnPropertyChanged(nameof(PlateSize));

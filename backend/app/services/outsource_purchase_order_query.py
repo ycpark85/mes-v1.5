@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from app.services.order_line_display import order_product_code
+
 from datetime import date
 
 from fastapi import HTTPException
@@ -83,7 +85,8 @@ def build_purchase_order_out(
                 lot_no=lot.lot_no,
                 order_no=order_line.order_no,
                 line_no=order_line.line_no,
-                product_code=product.product_code,
+                product_code=order_product_code(order_line, product),
+                mes_product_code=product.product_code if product else None,
                 product_name=product.product_name,
                 lot_qty=lot.lot_qty,
             )
@@ -157,7 +160,8 @@ def build_purchase_order_item_out(
         lot_no=lot.lot_no if lot else None,
         order_no=order_line.order_no if order_line else None,
         line_no=order_line.line_no if order_line else None,
-        product_code=product.product_code if product else None,
+        product_code=order_product_code(order_line, product),
+        mes_product_code=product.product_code if product else None,
         product_name=product.product_name if product else None,
         lot_qty=lot.lot_qty if lot else None,
     )
@@ -507,7 +511,8 @@ def list_purchase_order_targets(
                 order_no=order_line.order_no,
                 line_no=order_line.line_no,
                 product_id=product.product_id,
-                product_code=product.product_code,
+                product_code=order_product_code(order_line, product),
+                mes_product_code=product.product_code if product else None,
                 product_name=product.product_name,
                 representative_lot_id=work_group.representative_lot_id,
                 customer_partner_id=source_partner.partner_id,

@@ -111,6 +111,7 @@ class LotCRUD:
                 OrderLine.partner_id.label("partner_id"),
                 Partner.name.label("partner_name"),
                 Product.product_code.label("product_code"),
+                OrderLine.source_erp_product_code,
                 Product.product_name.label("product_name"),
                 OrderLine.order_date.label("order_date"),
                 OrderLine.order_qty.label("order_qty"),
@@ -210,7 +211,7 @@ class LotCRUD:
                     OrderLine.order_no == normalized_q.upper(),
                     Partner.name.ilike(like),
                     Product.product_name.ilike(like),
-                    Product.product_code.ilike(like),
+                    (Product.product_code.ilike(like) | OrderLine.source_erp_product_code.ilike(like)),
                 )
             )
         if inspection_schedule_registered is not None:
@@ -266,7 +267,8 @@ class LotCRUD:
               line_no, 
               ol_partner_id, 
               partner_name, 
-              product_code, 
+              product_code,
+              source_erp_product_code,
               product_name,
               order_date,
               order_qty,
@@ -302,7 +304,8 @@ class LotCRUD:
                     "line_no": line_no,
                     "partner_id": ol_partner_id,
                     "partner_name": partner_name,
-                    "product_code": product_code,
+                    "product_code": source_erp_product_code or product_code,
+                    "mes_product_code": product_code,
                     "product_name": product_name,
                     "order_date": order_date,
                     "order_qty": order_qty,

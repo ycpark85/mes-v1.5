@@ -1,4 +1,4 @@
-﻿using Mes.Wpf.Core.Common;
+using Mes.Wpf.Core.Common;
 using Mes.Wpf.Core.Common.ViewModels;
 using Mes.Wpf.Core.Constants;
 using Mes.Wpf.Core.Interfaces;
@@ -30,6 +30,10 @@ namespace Mes.Wpf.Modules.OrderLineList.ViewModels
 
         private long _productId;
         private string _productCode = string.Empty;
+        private string? _mesProductCode;
+        public string? MesProductCode { get => _mesProductCode; set => SetProperty(ref _mesProductCode, value); }
+        private string? _sourceErpProductCode;
+        public string? SourceErpProductCode { get => _sourceErpProductCode; set => SetProperty(ref _sourceErpProductCode, value); }
         private string _productName = string.Empty;
 
         private DateTime _orderDate;
@@ -312,6 +316,8 @@ namespace Mes.Wpf.Modules.OrderLineList.ViewModels
 
             ProductId = dto.ProductId;
             ProductCode = dto.ProductCode;
+            MesProductCode = dto.MesProductCode;
+            SourceErpProductCode = dto.SourceErpProductCode;
             ProductName = dto.ProductName;
 
             OrderDate = dto.OrderDate;

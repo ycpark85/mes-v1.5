@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from app.services.order_line_display import order_product_code
+
 from datetime import date
 
 from fastapi import HTTPException
@@ -89,7 +91,8 @@ def build_work_instruction_out(
                 lot_no=lot.lot_no,
                 order_no=order_line.order_no,
                 line_no=order_line.line_no,
-                product_code=product.product_code,
+                product_code=order_product_code(order_line, product),
+                mes_product_code=product.product_code if product else None,
                 product_name=product.product_name,
                 lot_qty=lot.lot_qty,
                 process_type=item.process_type,
@@ -127,7 +130,7 @@ def list_candidate_lots(
         stmt = stmt.where(
             (Lot.lot_no.ilike(like))
             | (OrderLine.order_no == normalized_q.upper())
-            | (Product.product_code.ilike(like))
+            | ((Product.product_code.ilike(like) | OrderLine.source_erp_product_code.ilike(like)))
             | (Product.product_name.ilike(like))
             | (Partner.name.ilike(like))
         )
@@ -193,7 +196,8 @@ def list_candidate_lots(
                 order_no=order_line.order_no,
                 line_no=order_line.line_no,
                 product_id=product.product_id,
-                product_code=product.product_code,
+                product_code=order_product_code(order_line, product),
+                mes_product_code=product.product_code if product else None,
                 product_name=product.product_name,
                 customer_partner_id=partner.partner_id,
                 customer_partner_name=partner.name,
@@ -266,10 +270,11 @@ def list_work_groups(
         lot_match = (
             select(OutsourceWorkGroupItem.outsource_work_group_id)
             .join(Lot, Lot.lot_id == OutsourceWorkGroupItem.lot_id)
+            .join(OrderLine, OrderLine.order_line_id == Lot.order_line_id)
             .join(Product, Product.product_id == Lot.product_id)
             .where(
                 (Lot.lot_no.like(like))
-                | (Product.product_code.ilike(like))
+                | ((Product.product_code.ilike(like) | OrderLine.source_erp_product_code.ilike(like)))
                 | (Product.product_name.ilike(like))
             )
         )
@@ -542,7 +547,8 @@ def build_work_group_detail(
                 lot_no=lot.lot_no,
                 order_no=order_line.order_no,
                 line_no=order_line.line_no,
-                product_code=product.product_code,
+                product_code=order_product_code(order_line, product),
+                mes_product_code=product.product_code if product else None,
                 product_name=product.product_name,
                 lot_qty=lot.lot_qty,
                 cuts_per_sheet=item.cuts_per_sheet,
@@ -570,6 +576,8 @@ def build_work_group_detail(
         representative_product_name=representative_product_name,
         lot_nos_text=", ".join(lot_nos),
         product_names_text=", ".join(dict.fromkeys(product_names)),
+        product_codes_text=", ".join(dict.fromkeys(row.product_code for row in lot_outputs if row.product_code)),
+        mes_product_codes_text=", ".join(dict.fromkeys(row.mes_product_code for row in lot_outputs if row.mes_product_code)),
         sheet_qty=work_group.sheet_qty,
         length_m=work_group.length_m,
         sheet_cut_count=work_group.sheet_cut_count,

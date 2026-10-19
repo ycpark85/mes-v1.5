@@ -40,6 +40,12 @@ class OrderLine(Base):
         CheckConstraint("line_no > 0", name="ck_order_line__line_no_gt_0"),
         CheckConstraint("order_qty > 0", name="ck_order_line__order_qty_gt_0"),
         CheckConstraint(
+            "(source_erp_product_code IS NULL AND source_product_name IS NULL AND source_product_spec IS NULL) OR "
+            "(source_erp_product_code IS NOT NULL AND source_product_name IS NOT NULL AND "
+            "length(trim(source_erp_product_code)) > 0 AND length(trim(source_product_name)) > 0)",
+            name="ck_order_line__erp_source",
+        ),
+        CheckConstraint(
             "status IN ('OPEN','CLOSED','DONE','CANCELED')",
             name="ck_order_line__status_enum",
         ),
@@ -107,6 +113,9 @@ class OrderLine(Base):
 
     # 운영 보조
     customer_po: Mapped[Optional[str]] = mapped_column(String(60), nullable=True)
+    source_erp_product_code: Mapped[Optional[str]] = mapped_column(String(60), nullable=True)
+    source_product_name: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+    source_product_spec: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     memo: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     # 처리계획(1단계)

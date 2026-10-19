@@ -1,4 +1,4 @@
-﻿<UserControl x:Class="Mes.Wpf.Modules.OrderLineList.Views.OrderLineListPage"
+<UserControl x:Class="Mes.Wpf.Modules.OrderLineList.Views.OrderLineListPage"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
@@ -285,6 +285,7 @@
                                                 Binding="{Binding ProductCode}"
                                                 Width="120"
                                                 ElementStyle="{StaticResource GridTextStyle}"/>
+                            <DataGridTextColumn Header="MES 코드" Binding="{Binding MesProductCode}" Width="140" ElementStyle="{StaticResource GridTextStyle}"/>
 
                             <DataGridTextColumn Header="품목명"
                                                 Binding="{Binding ProductName}"

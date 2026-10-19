@@ -3,9 +3,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Iterable
 
+from fastapi import HTTPException
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.services.partner_product_mapping_service import ensure_legacy_code_available
 from app.models.drawing import Drawing
 from app.models.product import Product
 from app.models.routing_template import RoutingTemplate
@@ -68,6 +70,12 @@ class ProductBulkService:
             errors.extend(resolve_errors)
 
         valid_resolved_rows = self._exclude_error_rows(resolved_rows, errors)
+
+        for row in sorted(valid_resolved_rows, key=lambda x: x.product_code):
+            try:
+                ensure_legacy_code_available(db, row.product_code)
+            except HTTPException as exc:
+                errors.append(ProductBulkError(row_number=row.row_number, field="product_code", message=str(exc.detail)))
 
         if valid_resolved_rows:
             errors.extend(self._validate_duplicate_product_code_in_db(db, valid_resolved_rows))

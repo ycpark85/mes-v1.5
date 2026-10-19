@@ -166,11 +166,15 @@
                                         <ScrollViewer VerticalScrollBarVisibility="Auto"
                                                       HorizontalScrollBarVisibility="Disabled"
                                                       MaxHeight="170">
+                                            <StackPanel>
+                                                <TextBlock Text="{Binding ProductCodesText, StringFormat=품목코드: {0}}" TextWrapping="Wrap" Margin="0,0,0,4"/>
+                                                <TextBlock Text="{Binding MesProductCodesText, StringFormat=MES 코드: {0}}" TextWrapping="Wrap" Foreground="#64748B" Margin="0,0,0,6"/>
                                             <TextBlock Margin="0,0,20,0"
                                                        Foreground="#4B5563"
                                                        Text="{Binding LotSummary}"
                                                        TextWrapping="Wrap"
                                                        LineHeight="22" />
+                                            </StackPanel>
                                         </ScrollViewer>
                                     </Border>
                                 </Grid>

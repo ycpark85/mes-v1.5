@@ -1,4 +1,4 @@
-﻿using Mes.Wpf.Core.Common;
+using Mes.Wpf.Core.Common;
 using System;
 using System.Collections.ObjectModel;
 using System.Text.Json.Serialization;
@@ -137,6 +137,15 @@ namespace Mes.Wpf.Modules.OrderLines.Dtos
         [JsonPropertyName("erp_product_display_name")]
         public string ErpProductDisplayName { get; set; } = string.Empty;
 
+        [JsonPropertyName("mes_product_code")]
+        public string? MesProductCode { get; set; }
+        [JsonPropertyName("drawing_no")]
+        public string? DrawingNo { get; set; }
+        [JsonPropertyName("mapping_id")]
+        public long? MappingId { get; set; }
+        [JsonPropertyName("is_unprinted_managed")]
+        public bool IsUnprintedManaged { get; set; }
+
         [JsonPropertyName("mes_product_display_name")]
         public string? MesProductDisplayName { get; set; }
 
@@ -224,6 +233,10 @@ namespace Mes.Wpf.Modules.OrderLines.Dtos
 
     public class OrderLineBulkCommitRowChoiceDto
     {
+        [JsonPropertyName("expected_product_id")]
+        public long? ExpectedProductId { get; set; }
+        [JsonPropertyName("expected_mapping_id")]
+        public long? ExpectedMappingId { get; set; }
         [JsonPropertyName("row_number")]
         public int RowNumber { get; set; }
 

@@ -1,9 +1,11 @@
-﻿using System.Text.Json.Serialization;
+using System.Text.Json.Serialization;
 
 namespace Mes.Wpf.Modules.Products.Dtos
 {
     public class ProductUpdateRequest
     {
+        [JsonPropertyName("is_unprinted_managed")]
+        public bool IsUnprintedManaged { get; set; }
         [JsonPropertyName("product_name")]
         public string ProductName { get; set; } = string.Empty;
 

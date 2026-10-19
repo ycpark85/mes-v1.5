@@ -1,5 +1,13 @@
 from __future__ import annotations
 
+from app.models.order_line import OrderLine
+from app.models.product import Product
+
+
+def order_product_code(order_line: OrderLine | None, product: Product | None) -> str:
+    """Use the order's immutable business code; never guess from today's mappings."""
+    return (order_line.source_erp_product_code if order_line else None) or (product.product_code if product else "")
+
 
 def to_plan_type_display(plan_type: str | None) -> str | None:
     if not plan_type:

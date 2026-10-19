@@ -78,7 +78,9 @@ def list_production_daily_rows(
 ) -> tuple[list[dict], int]:
     normalized_status = _normalize_status(status)
 
-    stmt = select(ProductionProgressSnapshot).where(
+    stmt = select(ProductionProgressSnapshot, OrderLine.source_erp_product_code).join(
+        OrderLine, OrderLine.order_line_id == ProductionProgressSnapshot.order_line_id
+    ).where(
         ProductionProgressSnapshot.status == normalized_status
     )
 
@@ -92,6 +94,7 @@ def list_production_daily_rows(
         stmt = stmt.where(
             or_(
                 ProductionProgressSnapshot.product_code.ilike(keyword),
+                OrderLine.source_erp_product_code.ilike(keyword),
                 ProductionProgressSnapshot.product_name.ilike(keyword),
             )
         )
@@ -111,12 +114,18 @@ def list_production_daily_rows(
             .offset((page - 1) * size)
             .limit(size)
         )
-        .scalars()
         .all()
     )
 
     today = korea_today()
-    return [_snapshot_to_row(row, today=today) for row in rows], total
+    return [
+        dict(
+            _snapshot_to_row(snapshot, today=today),
+            product_code=source_code or snapshot.product_code,
+            mes_product_code=snapshot.product_code,
+        )
+        for snapshot, source_code in rows
+    ], total
 
 
 def refresh_order_line_snapshot(db: Session, order_line_id: int) -> bool:
@@ -248,7 +257,7 @@ def _build_order_line_snapshot_data(db: Session, order_line_id: int) -> dict | N
                 OrderLine,
                 Partner.name.label("partner_name"),
                 Product.product_code.label("product_code"),
-                Product.product_name.label("product_name"),
+                func.coalesce(OrderLine.source_product_name, Product.product_name).label("product_name"),
             )
             .join(Partner, Partner.partner_id == OrderLine.partner_id)
             .join(Product, Product.product_id == OrderLine.product_id)

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json.Serialization;
@@ -125,6 +125,9 @@ namespace Mes.Wpf.Modules.BohyunOutsourceManagement.Dtos
         [JsonPropertyName("product_code")]
         public string ProductCode { get; set; } = string.Empty;
 
+        [JsonPropertyName("mes_product_code")]
+        public string? MesProductCode { get; set; }
+
         [JsonPropertyName("product_name")]
         public string ProductName { get; set; } = string.Empty;
 
@@ -217,6 +220,8 @@ namespace Mes.Wpf.Modules.BohyunOutsourceManagement.Dtos
             : string.Join(", ", ProductNames.Distinct());
 
         public bool CanInbound => Status == "WAITING_INBOUND";
+        public string ProductCodesText => string.Join(", ", Items.Select(x => x.ProductCode).Where(x => !string.IsNullOrWhiteSpace(x)).Distinct());
+        public string MesProductCodesText => string.Join(", ", Items.Select(x => x.MesProductCode).Where(x => !string.IsNullOrWhiteSpace(x)).Distinct());
         public bool CanWorkDone => Status == "INBOUNDED";
         public bool CanShip => Status == "WORK_DONE";
 

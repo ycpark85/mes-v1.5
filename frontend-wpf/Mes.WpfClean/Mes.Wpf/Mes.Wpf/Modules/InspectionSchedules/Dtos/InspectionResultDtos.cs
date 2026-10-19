@@ -7,6 +7,11 @@ namespace Mes.Wpf.Modules.InspectionSchedules.Dtos
 {
     public class InspectionResultResponse
     {
+        [JsonPropertyName("product_code")]
+        public string? ProductCode { get; set; }
+        [JsonPropertyName("mes_product_code")]
+        public string? MesProductCode { get; set; }
+
         [JsonPropertyName("result")]
         public InspectionResultDto? Result { get; set; }
 

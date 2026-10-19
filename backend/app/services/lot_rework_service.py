@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from app.services.order_line_display import order_product_code
+
 from datetime import date
 from typing import Optional
 
@@ -120,7 +122,8 @@ def _build_lot_detail_out(
     out.line_no = order_line.line_no
     out.partner_id = order_line.partner_id
     out.partner_name = partner.name if partner else None
-    out.product_code = product.product_code
+    out.product_code = order_product_code(order_line, product)
+    out.mes_product_code = product.product_code
     out.product_name = product.product_name
     out.steps = [s for s in lot.steps]
     return out

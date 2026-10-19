@@ -117,6 +117,8 @@
                         <DataGridTextColumn Header="거래처" Binding="{Binding PartnerName}" Width="120" IsReadOnly="True" />
                         <DataGridTextColumn Header="구분" Binding="{Binding BundleText}" Width="60" IsReadOnly="True" />
                         <DataGridTextColumn Header="LOT" Binding="{Binding LotNosText}" Width="180" IsReadOnly="True" />
+                        <DataGridTextColumn Header="품목코드" Binding="{Binding ProductCodesText}" Width="150" IsReadOnly="True" />
+                        <DataGridTextColumn Header="MES 코드" Binding="{Binding MesProductCodesText}" Width="150" IsReadOnly="True" />
                         <DataGridTextColumn Header="대표품목" Binding="{Binding RepresentativeProductName}" Width="160" IsReadOnly="True" />
                         <DataGridTextColumn Header="사용M" Binding="{Binding LengthM, StringFormat={}{0:N2}}" Width="80" IsReadOnly="True" />
                     </DataGrid.Columns>
@@ -202,6 +204,8 @@
                                   VerticalScrollBarVisibility="Auto">
                             <DataGrid.Columns>
                                 <DataGridTextColumn Header="LOT" Binding="{Binding LotNo}" Width="110" IsReadOnly="True" />
+                                <DataGridTextColumn Header="품목코드" Binding="{Binding ProductCode}" Width="140" IsReadOnly="True" />
+                                <DataGridTextColumn Header="MES 코드" Binding="{Binding MesProductCode}" Width="140" IsReadOnly="True" />
                                 <DataGridTextColumn Header="품목명" Binding="{Binding ProductName}" Width="170" IsReadOnly="True" />
                                 <DataGridTextColumn Header="수량" Binding="{Binding LotQty, StringFormat={}{0:N0}}" Width="70" IsReadOnly="True" />
                                 <DataGridTextColumn Header="컷수" Binding="{Binding CutsPerSheet}" Width="60" IsReadOnly="True" />

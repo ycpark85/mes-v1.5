@@ -143,6 +143,8 @@ class InspectionInventorySummaryOut(BaseModel):
 
 
 class InspectionResultGetOut(BaseModel):
+    product_code: str | None = None
+    mes_product_code: str | None = None
     result: Optional[InspectionResultOut] = None
     schedule_status: Optional[str] = None
     inspection_round: int = 0
@@ -174,6 +176,7 @@ class InspectionResultListItemOut(BaseModel):
     due_date: date
     partner_name: str
     product_code: str
+    mes_product_code: str | None = None
     product_name: str
     lot_qty: int
     order_qty: int
