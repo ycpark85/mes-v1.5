@@ -47,6 +47,12 @@ class ProductUpdate(BaseModel):
     is_active: Optional[bool] = None
     memo: Optional[str] = None
 
+    @model_validator(mode="after")
+    def validate_product_name(self):
+        if self.product_name is not None and not self.product_name.strip():
+            raise ValueError("product_name must not be blank")
+        return self
+
 
 class ProductOut(BaseModel):
     is_unprinted_managed: bool = False

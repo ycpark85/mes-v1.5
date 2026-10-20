@@ -80,7 +80,7 @@ def update_order_line_fields(
         target_product = ensure_product_active(db, data.get("product_id", obj.product_id))
         current_product = ensure_product_active(db, obj.product_id)
         if obj.source_erp_product_code or target_product.is_unprinted_managed or current_product.is_unprinted_managed:
-            raise HTTPException(status_code=409, detail="무지 연결 수주는 거래처·품목을 변경할 수 없습니다. 취소 후 올바른 연결로 다시 등록하세요.")
+            raise HTTPException(status_code=409, detail="발주 품명이 보존된 수주는 거래처·품목을 변경할 수 없습니다. 취소 후 올바른 품목으로 다시 등록하세요.")
     requested_due_date = data.get("due_date")
 
     if obj.status == OrderLineStatus.OPEN.value:

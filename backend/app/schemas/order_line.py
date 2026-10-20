@@ -145,7 +145,7 @@ class OrderLineBulkImportRowIn(BaseModel):
     erp_order_no: str = Field(..., max_length=40)
     product_code: str = Field(..., max_length=60)
     partner_name: str = Field(..., max_length=200)
-    erp_product_display_name: str = Field(..., max_length=300)
+    erp_product_display_name: str = Field(..., max_length=303)
     order_qty_text: str = Field(..., max_length=50)
     due_date_text: str = Field(..., max_length=20)
     remark: Optional[str] = None
@@ -222,7 +222,8 @@ class OrderLineBulkCommitRowChoice(BaseModel):
     row_number: int = Field(..., ge=1)
     expected_product_id: Optional[int] = None
     expected_mapping_id: Optional[int] = None
-    apply_product_name_change: bool = False
+    apply_product_name_change: bool = Field(False,
+        description="Also rename the MES master name. Every order snapshots the file name/spec regardless; master spec is unchanged.")
 
 
 class OrderLineBulkCommitRequest(BaseModel):

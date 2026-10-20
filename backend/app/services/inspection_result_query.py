@@ -283,7 +283,7 @@ def list_inspection_results_for_grid(
             Partner.name.label("partner_name"),
             func.coalesce(OrderLine.source_erp_product_code, Product.product_code).label("product_code"),
             Product.product_code.label("mes_product_code"),
-            Product.product_name,
+            func.coalesce(OrderLine.source_product_name, Product.product_name).label("product_name"),
             Lot.lot_qty,
             OrderLine.order_qty,
             InspectionResult.good_qty,
@@ -335,7 +335,7 @@ def list_inspection_results_for_grid(
         stmt = stmt.where(
             or_(
                 Partner.name.ilike(keyword),
-                Product.product_name.ilike(keyword),
+                (Product.product_name.ilike(keyword) | OrderLine.source_product_name.ilike(keyword)),
                 (Product.product_code.ilike(keyword) | OrderLine.source_erp_product_code.ilike(keyword)),
                 Lot.lot_no.ilike(keyword),
             )
@@ -346,7 +346,7 @@ def list_inspection_results_for_grid(
         product_keyword = f"%{product_q.strip()}%"
         stmt = stmt.where(
             or_(
-                Product.product_name.ilike(product_keyword),
+                (Product.product_name.ilike(product_keyword) | OrderLine.source_product_name.ilike(product_keyword)),
                 (Product.product_code.ilike(product_keyword) | OrderLine.source_erp_product_code.ilike(product_keyword)),
             )
         )

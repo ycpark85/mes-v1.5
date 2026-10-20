@@ -1265,7 +1265,9 @@ class OrderLineServicesTests(unittest.TestCase):
         self.assertEqual([10, 20], [order_line.order_qty for order_line in created_order_lines])
         self.assertTrue(all(order_line.memo == "bulk memo" for order_line in created_order_lines))
         self.assertEqual("Updated Product", product.product_name)
-        self.assertEqual("Spec A", product.product_spec)
+        self.assertIsNone(product.product_spec)
+        self.assertEqual(["Updated Product", "Updated Product"], [x.source_product_name for x in created_order_lines])
+        self.assertEqual(["Spec A", "Spec A"], [x.source_product_spec for x in created_order_lines])
 
     def test_commit_order_line_bulk_rejects_conflicting_product_name_change_choices(self) -> None:
         payload = OrderLineBulkCommitRequest(

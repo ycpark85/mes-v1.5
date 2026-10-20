@@ -187,10 +187,7 @@ namespace Mes.Wpf.Modules.OrderLines.ViewModels
                     ValidationGroups.Add(group);
                     foreach (var row in group.Rows)
                     {
-                        if (!row.CanApplyProductNameChange)
-                        {
-                            row.ApplyProductNameChange = false;
-                        }
+                        row.ApplyProductNameChange = false;
 
                         FlatRows.Add(row);
                     }
@@ -213,7 +210,17 @@ namespace Mes.Wpf.Modules.OrderLines.ViewModels
                 return;
             }
 
-            var confirmed = _messageService.Confirm("검증 결과를 기준으로 일괄 등록하시겠습니까?", "벌크 등록");
+            var renamedProducts = FlatRows
+                .Where(x => x.ApplyProductNameChange && x.CanApplyProductNameChange)
+                .Select(x => x.ProductId).Distinct().Count();
+            var confirmation = "발주파일의 품목명·규격으로 일괄 등록하시겠습니까?";
+            if (renamedProducts > 0)
+            {
+                confirmation += $"\n\n선택한 {renamedProducts}개 품목의 MES 기준 품목명도 변경합니다."
+                    + "\n공유 품목은 여러 거래처가 사용하는 공통 기준 이름이 변경됩니다."
+                    + "\n기존 발주 품명은 보존하며 MES 기준 규격은 변경하지 않습니다.";
+            }
+            var confirmed = _messageService.Confirm(confirmation, "벌크 등록");
             if (!confirmed)
             {
                 return;
@@ -245,8 +252,6 @@ namespace Mes.Wpf.Modules.OrderLines.ViewModels
                     _messageService.ShowError(result.Message ?? "벌크 등록 중 오류가 발생했습니다.");
                     return;
                 }
-
-                CommitResult = result.Data;
 
                 CommitResult = result.Data;
                 ApplyCommitResultToRows(result.Data);

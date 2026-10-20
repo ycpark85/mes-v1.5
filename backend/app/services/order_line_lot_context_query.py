@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from app.services.order_line_display import order_product_code
+from app.services.order_line_display import order_product_code, order_product_name, order_product_spec
 
 from fastapi import HTTPException
 from sqlalchemy import select
@@ -47,7 +47,7 @@ def get_lot_create_context_dto(db: Session, order_line_id: int) -> LotCreateCont
         product_id=product.product_id,
         product_code=order_product_code(order_line, product),
         mes_product_code=product.product_code if product else None,
-        product_name=product.product_name,
+        product_name=order_product_name(order_line, product),
         order_qty=order_line.order_qty,
         uom=order_line.uom,
         due_date=order_line.due_date,
@@ -55,7 +55,7 @@ def get_lot_create_context_dto(db: Session, order_line_id: int) -> LotCreateCont
         panel_width_mm=product.panel_width_mm,
         panel_length_mm=product.panel_length_mm,
         cut_qty_per_panel=product.cut_qty_per_panel,
-        product_spec=product.product_spec,
+        product_spec=order_product_spec(order_line, product),
         drawing=LotCreateDrawingDto(
             drawing_id=drawing.drawing_id if drawing else None,
             drawing_no=drawing.drawing_no if drawing else None,

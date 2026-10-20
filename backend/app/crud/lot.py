@@ -112,7 +112,7 @@ class LotCRUD:
                 Partner.name.label("partner_name"),
                 Product.product_code.label("product_code"),
                 OrderLine.source_erp_product_code,
-                Product.product_name.label("product_name"),
+                func.coalesce(OrderLine.source_product_name, Product.product_name).label("product_name"),
                 OrderLine.order_date.label("order_date"),
                 OrderLine.order_qty.label("order_qty"),
                 latest_inspection_subq.c.inspection_schedule_id.label("inspection_schedule_id"),
@@ -210,7 +210,7 @@ class LotCRUD:
                     Lot.lot_no.ilike(like),
                     OrderLine.order_no == normalized_q.upper(),
                     Partner.name.ilike(like),
-                    Product.product_name.ilike(like),
+                    (Product.product_name.ilike(like) | OrderLine.source_product_name.ilike(like)),
                     (Product.product_code.ilike(like) | OrderLine.source_erp_product_code.ilike(like)),
                 )
             )

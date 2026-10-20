@@ -37,7 +37,7 @@ def list_shipments_for_grid(
             Partner.name.label("partner_name"),
             Product.product_code.label("product_code"),
             OrderLine.source_erp_product_code,
-            Product.product_name.label("product_name"),
+            func.coalesce(OrderLine.source_product_name, Product.product_name).label("product_name"),
             Lot.lot_no.label("lot_no"),
         )
         .select_from(ShipmentLine)
@@ -66,7 +66,7 @@ def list_shipments_for_grid(
             Partner.name.ilike(keyword),
             Product.product_code.ilike(keyword),
             OrderLine.source_erp_product_code.ilike(keyword),
-            Product.product_name.ilike(keyword),
+            (Product.product_name.ilike(keyword) | OrderLine.source_product_name.ilike(keyword)),
             Lot.lot_no.ilike(keyword),
             ShipmentLine.stock_lot_no.ilike(keyword),
         )

@@ -73,7 +73,7 @@ internal static class SharedCodeWalkthrough
         bulk.SourceRows.Add(new OrderLineBulkImportRowDto { RowNumber = 1, ErpOrderNo = "2026/10/19-1", PartnerName = "A업체", ProductCode = "MUJI-100", ErpProductDisplayName = "A용 무지 상자 [100×200]", OrderQtyText = "1000", DueDateText = "2026-10-31" });
         bulk.SourceRows.Add(new OrderLineBulkImportRowDto { RowNumber = 2, ErpOrderNo = "2026/10/19-2", PartnerName = "B업체", ProductCode = "MUJI-100", ErpProductDisplayName = "B용 포장재 [100×200]", OrderQtyText = "2000", DueDateText = "2026-10-31" });
         Program.Wait(bulk.ValidateCommand.ExecuteAsync());
-        if (!bulk.CanCommit || bulk.ReadyRowCount != 2 || bulk.FlatRows.Any(x => x.ProductId != product.ProductId || x.CanApplyProductNameChange))
+        if (!bulk.CanCommit || bulk.ReviewRowCount != 2 || bulk.FlatRows.Any(x => x.ProductId != product.ProductId || x.ApplyProductNameChange))
             throw new Exception("The example preview must retain partner names and resolve one product.");
         Program.Render(new OrderLineBulkImportPage { DataContext = bulk }, Path.Combine(directory, "05-orders-validated.png"), 1600, 420);
         Program.Wait(bulk.CommitCommand.ExecuteAsync());
@@ -146,16 +146,17 @@ public class SharedCodeExampleApi : ProductsApi
             } });
         if (args!.Length > 1 && args[1] is OrderLineBulkValidateRequest validation)
         {
-            var preview = new OrderLineBulkValidateResultDto { TotalRowCount = validation.Items.Count, ReadyRowCount = validation.Items.Count };
+            var preview = new OrderLineBulkValidateResultDto { TotalRowCount = validation.Items.Count, ReviewRowCount = validation.Items.Count };
             foreach (var row in validation.Items)
             {
                 var mapping = Mappings.Single(x => x.PartnerName == row.PartnerName && x.ErpProductCode == row.ProductCode && x.IsActive);
                 var product = Products.Single(x => x.ProductId == mapping.ProductId);
-                preview.Groups.Add(new() { ErpOrderNo = row.ErpOrderNo, PartnerName = row.PartnerName, PartnerId = mapping.PartnerId, Status = "READY", CanCommit = true, Rows = new() { new() {
+                preview.Groups.Add(new() { ErpOrderNo = row.ErpOrderNo, PartnerName = row.PartnerName, PartnerId = mapping.PartnerId, Status = "REVIEW", CanCommit = true, Rows = new() { new() {
                     RowNumber = row.RowNumber, ErpOrderNo = row.ErpOrderNo, PartnerName = row.PartnerName, PartnerId = mapping.PartnerId,
                     ProductId = product.ProductId, MappingId = mapping.MappingId, ProductCode = row.ProductCode, MesProductCode = product.ProductCode,
                     DrawingNo = product.DrawingNo, ErpProductDisplayName = row.ErpProductDisplayName, MesProductDisplayName = $"{product.ProductName} [{product.ProductSpec}]",
-                    OrderQty = int.Parse(row.OrderQtyText), IsUnprintedManaged = true, Status = "READY"
+                    OrderQty = int.Parse(row.OrderQtyText), IsUnprintedManaged = true, Status = "REVIEW",
+                    ProductNameMismatch = true, CanApplyProductNameChange = true
                 } } });
             }
             return Task.FromResult(new ApiResult<OrderLineBulkValidateResultDto> { Success = true, Data = preview });

@@ -111,7 +111,11 @@ internal static class Program
         bulk.SourceRows.Add(new OrderLineBulkImportRowDto { RowNumber = 1, ErpOrderNo = "2026/10/19-1", PartnerName = "A업체", ProductCode = "MUJI-100", ErpProductDisplayName = "A용 무지 [100×200]", OrderQtyText = "100", DueDateText = "2026-10-31" });
         Wait(bulk.ValidateCommand.ExecuteAsync());
         Check(bulk.FlatRows.Single().MesProductCode == "MES-U000001" && bulk.FlatRows.Single().DrawingNo == "D-002", "bulk preview displays resolved internal code and drawing");
-        Check(!bulk.FlatRows.Single().CanApplyProductNameChange && bulk.CanCommit, "different customer name is accepted without master-name overwrite");
+        Check(bulk.FlatRows.Single().CanApplyProductNameChange && !bulk.FlatRows.Single().ApplyProductNameChange && bulk.CanCommit,
+            "different customer name defaults to order snapshot without master rename");
+        bulk.FlatRows.Single().ApplyProductNameChange = true;
+        Wait(bulk.ValidateCommand.ExecuteAsync());
+        Check(!bulk.FlatRows.Single().ApplyProductNameChange, "revalidation resets master rename to unchecked");
 
         if (args.Length > 0)
         {
@@ -134,8 +138,22 @@ internal static class Program
             Check(errors.Errors.Count == 0, "actual WPF controls render without binding errors: " + string.Join("; ", errors.Errors));
         }
         Wait(bulk.CommitCommand.ExecuteAsync());
-        Check(fake.LastBulk?.RowChoices.Single().ExpectedProductId == 2 && fake.LastBulk.RowChoices.Single().ExpectedMappingId == 100, "bulk commit sends the reviewed product and mapping even when rename is disabled");
+        Check(fake.LastBulk?.RowChoices.Single().ExpectedProductId == 2 && fake.LastBulk.RowChoices.Single().ExpectedMappingId == 100, "bulk commit sends the reviewed product and mapping");
+        Check(fake.LastBulk?.RowChoices.Single().ApplyProductNameChange == false, "unchecked commit saves file name without asking for master rename");
         Check(JsonSerializer.Serialize(fake.LastBulk).Contains("expected_mapping_id"), "wire contract includes mapping freshness check");
+        bulk.SourceRows.Add(new OrderLineBulkImportRowDto { RowNumber = 1, ErpOrderNo = "2026/10/19-1", PartnerName = "A업체",
+            ProductCode = "MUJI-100", ErpProductDisplayName = "A용 무지 [100×200]", OrderQtyText = "100", DueDateText = "2026-10-31" });
+        Wait(bulk.ValidateCommand.ExecuteAsync());
+        bulk.FlatRows.Single().ApplyProductNameChange = true;
+        messages.ConfirmResult = false;
+        Wait(bulk.CommitCommand.ExecuteAsync());
+        Check(fake.LastBulk?.RowChoices.Single().ApplyProductNameChange == false && bulk.SourceRows.Count == 1,
+            "canceling master rename confirmation keeps input and sends no new commit");
+        Check(messages.LastConfirmation.Contains("MES 기준 품목명") && messages.LastConfirmation.Contains("공유 품목")
+            && messages.LastConfirmation.Contains("규격은 변경하지"), "confirmation distinguishes master name, shared names and unchanged specification");
+        messages.ConfirmResult = true;
+        Wait(bulk.CommitCommand.ExecuteAsync());
+        Check(fake.LastBulk?.RowChoices.Single().ApplyProductNameChange == true, "checked commit explicitly requests master name update");
         Console.WriteLine($"Unprinted product regression checks: {_checks} passed");
     }
     private static void CheckManagementFilters(ProductPageViewModel vm, ProductsApi fake)
@@ -263,7 +281,7 @@ public class ProductsApi : DispatchProxy
         }
         else if (response == typeof(OrderLineBulkValidateResultDto))
         {
-            data = new OrderLineBulkValidateResultDto { TotalRowCount = 1, ReadyRowCount = 1, Groups = new() { new OrderLineBulkValidateGroupDto { ErpOrderNo = "2026/10/19-1", CanCommit = true, Status = "READY", Rows = new() { new OrderLineBulkValidateRowDto { RowNumber = 1, ErpOrderNo = "2026/10/19-1", PartnerName = "A업체", ProductId = 2, MappingId = 100, ProductCode = "MUJI-100", MesProductCode = "MES-U000001", DrawingNo = "D-002", ErpProductDisplayName = "A용 무지 [100×200]", MesProductDisplayName = "공통 무지 상자 [100×200]", OrderQty = 100, IsUnprintedManaged = true, Status = "READY" } } } } };
+            data = new OrderLineBulkValidateResultDto { TotalRowCount = 1, ReviewRowCount = 1, Groups = new() { new OrderLineBulkValidateGroupDto { ErpOrderNo = "2026/10/19-1", CanCommit = true, Status = "READY", Rows = new() { new OrderLineBulkValidateRowDto { RowNumber = 1, ErpOrderNo = "2026/10/19-1", PartnerName = "A업체", ProductId = 2, MappingId = 100, ProductCode = "MUJI-100", MesProductCode = "MES-U000001", DrawingNo = "D-002", ErpProductDisplayName = "A용 무지 [100×200]", MesProductDisplayName = "공통 무지 상자 [100×200]", OrderQty = 100, IsUnprintedManaged = true, Status = "REVIEW", CanApplyProductNameChange = true, ProductNameMismatch = true } } } } };
         }
         else if (args.Length > 1 && args[1] is OrderLineBulkCommitRequest commit)
         {
@@ -277,10 +295,15 @@ public class ProductsApi : DispatchProxy
 internal class Messages : IMessageService
 {
     public bool ConfirmResult = true;
+    public string LastConfirmation = "";
     public void ShowInfo(string message, string title = "알림") { }
     public void ShowWarning(string message, string title = "경고") { Console.WriteLine("Test warning: " + message); }
     public void ShowError(string message, string title = "오류") { Console.WriteLine("Expected/test message: " + message); }
-    public bool Confirm(string message, string title = "확인") => ConfirmResult;
+    public bool Confirm(string message, string title = "확인")
+    {
+        LastConfirmation = message;
+        return ConfirmResult;
+    }
 }
 internal class DrawingViewer : IDrawingViewer { public Task OpenCurrentDrawingAsync(long id) => Task.CompletedTask; }
 internal class BindingErrors : TraceListener

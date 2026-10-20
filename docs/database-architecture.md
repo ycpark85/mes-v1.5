@@ -1,5 +1,11 @@
 # Database Architecture
 
+## Order product-name snapshots for all products — 2026-10-20
+
+The existing order source code/name/spec columns now apply to every new imported order, including printed products. Manual orders snapshot the selected master (or managed partner connection). `apply_product_name_change` only opts into also renaming the master name; it never changes master specification. Different selected names for one product across an entire import are rejected before affected groups write.
+
+Before changing a master name/spec, capture current values into only that product's legacy orders with null source code, under the product write lock and in the same transaction. Include completed/canceled/inactive orders; retain all existing snapshots, business timestamps and identities. This captures the current baseline, not the unavailable original file. No blanket historical backfill, new DDL, index or migration is required. Schema SVG relationships are unchanged. See [transaction, rollback and verification rules](order-product-name-snapshots-2026-10-20.md). This supersedes the managed-only snapshot scope below.
+
 ## Opt-in unprinted products and partner ERP mappings — 2026-10-19
 
 Scope is prospective code sharing. Existing products and their data are correct and continue using the current path. Rollout does not require converting existing products, auditing historical drawings/dies, or reallocating inventory. Explicit opt-in is only relevant if an existing unprinted product itself begins sharing its ERP code in future.

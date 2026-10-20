@@ -1,5 +1,6 @@
 from contextlib import contextmanager
 
+import pytest
 from sqlalchemy import select
 
 import test_order_line_services as order_fixtures
@@ -43,24 +44,30 @@ def test_order_list_and_lot_context_separate_business_and_mes_codes():
         context = get_lot_create_context_dto(fixture.db, order.order_line_id)
         assert context.product_code == 'SHARED-ERP-100'
         assert context.mes_product_code == mes_code
+        assert context.product_name == '거래처별 무지 품명'
+        assert context.product_spec == '100×200'
 
 
-def test_inspection_schedule_search_and_display_use_order_code():
+@pytest.mark.parametrize("keyword", ["SHARED-ERP-100", "거래처별 무지 품명"])
+def test_inspection_schedule_search_and_display_use_order_code(keyword):
     with example(schedule_fixtures.InspectionWorkInstructionQueryTests) as fixture:
         for order in fixture.db.scalars(select(OrderLine)).all():
             set_order_code(fixture.db, order)
-        rows = list_inspection_schedule_items(fixture.db, product_q='SHARED-ERP-100')
+        rows = list_inspection_schedule_items(fixture.db, product_q=keyword)
         assert rows
         assert all(row.product_code == 'SHARED-ERP-100' and row.mes_product_code for row in rows)
+        assert all(row.product_name == '거래처별 무지 품명' and row.product_spec == '100×200' for row in rows)
 
 
-def test_inspection_results_search_and_display_use_order_code():
+@pytest.mark.parametrize("keyword", ["SHARED-ERP-100", "거래처별 무지 품명"])
+def test_inspection_results_search_and_display_use_order_code(keyword):
     with example(result_fixtures.InspectionResultQueryTests) as fixture:
         for order in fixture.db.scalars(select(OrderLine)).all():
             set_order_code(fixture.db, order)
-        result = list_inspection_results_for_grid(fixture.db, q='SHARED-ERP-100')
+        result = list_inspection_results_for_grid(fixture.db, q=keyword)
         assert result.items
         assert all(row.product_code == 'SHARED-ERP-100' and row.mes_product_code for row in result.items)
+        assert all(row.product_name == '거래처별 무지 품명' for row in result.items)
         detail = get_inspection_result_detail(fixture.db, result.items[0].inspection_schedule_id, view_mode='saved')
         assert detail.product_code == 'SHARED-ERP-100'
         assert detail.mes_product_code == result.items[0].mes_product_code
@@ -83,6 +90,9 @@ def test_shared_code_still_keeps_different_mes_products_and_drawings():
         assert lots.meta.total == 3
         assert {row.product_code for row in lots.items} == {'MUJI-100'}
         assert {row.product_id for row in lots.items} == {fixture.first.product_id, fixture.second.product_id}
+        by_name = list_lots(fixture.db, page=1, size=20, q='납품용 무지')
+        assert by_name.meta.total == 3
+        assert all(row.product_name == '납품용 무지' for row in by_name.items)
 
 
 def test_lot_trace_keeps_order_code():
@@ -95,9 +105,11 @@ def test_lot_trace_keeps_order_code():
         trace = get_lot_trace_detail_for_lot(fixture.db, 1)
         assert trace.product_order.product_code == 'SHARED-ERP-100'
         assert trace.product_order.mes_product_code
+        assert trace.product_order.product_name == '거래처별 무지 품명'
 
 
-def test_outsource_documents_and_search_keep_order_code():
+@pytest.mark.parametrize("keyword", ["SHARED-ERP-100", "거래처별 무지 품명"])
+def test_outsource_documents_and_search_keep_order_code(keyword):
     import test_outsource_work_instruction_query as fixtures
     from app.services.outsource_work_instruction_query import (
         build_work_instruction_out, get_work_group_detail, list_candidate_lots, list_work_groups,
@@ -107,11 +119,11 @@ def test_outsource_documents_and_search_keep_order_code():
     with example(fixtures.OutsourceWorkInstructionQueryTests) as fixture:
         for order in fixture.db.scalars(select(OrderLine)).all():
             set_order_code(fixture.db, order)
-        candidates = list_candidate_lots(fixture.db, q='SHARED-ERP-100')
+        candidates = list_candidate_lots(fixture.db, q=keyword)
         assert [row.lot_id for row in candidates.items] == [2]
         assert candidates.items[0].product_code == 'SHARED-ERP-100'
         assert candidates.items[0].mes_product_code == 'P-002'
-        groups = list_work_groups(fixture.db, q='SHARED-ERP-100')
+        groups = list_work_groups(fixture.db, q=keyword)
         assert groups.total_count == 1
         assert groups.items[0].product_codes_text == 'SHARED-ERP-100'
         assert groups.items[0].mes_product_codes_text == 'P-001'
@@ -119,9 +131,11 @@ def test_outsource_documents_and_search_keep_order_code():
             output = build_work_instruction_out(fixture.db, instruction)
             assert output.items
             assert all(row.product_code == 'SHARED-ERP-100' and row.mes_product_code for row in output.items)
+            assert all(row.product_name == '거래처별 무지 품명' for row in output.items)
         for group in fixture.db.scalars(select(OutsourceWorkGroup)).all():
             detail = get_work_group_detail(fixture.db, group.outsource_work_group_id)
             assert all(row.product_code == 'SHARED-ERP-100' and row.mes_product_code for row in detail.lots)
+            assert all(row.product_name == '거래처별 무지 품명' for row in detail.lots)
 
 
 def test_existing_production_snapshot_displays_order_code_without_rebuild():
@@ -141,23 +155,26 @@ def test_existing_production_snapshot_displays_order_code_without_rebuild():
         )
         fixture.db.add(snapshot)
         fixture.db.commit()
-        for keyword in ['SHARED-ERP-100', mes_code]:
+        for keyword in ['SHARED-ERP-100', mes_code, '거래처별 무지 품명']:
             rows, total = list_production_daily_rows(fixture.db, page=1, size=20, product_q=keyword)
             assert total == 1
             assert rows[0]['product_code'] == 'SHARED-ERP-100'
             assert rows[0]['mes_product_code'] == mes_code
+            assert rows[0]['product_name'] == '거래처별 무지 품명'
         fixture.db.refresh(snapshot)
         assert snapshot.product_code == mes_code
 
 
-def test_shipment_display_and_search_keep_order_code():
+@pytest.mark.parametrize("keyword", ["SHARED-ERP-100", "거래처별 무지 품명"])
+def test_shipment_display_and_search_keep_order_code(keyword):
     import test_shipment_list_query as fixtures
     from app.services.shipment_list_query import list_shipments_for_grid
     with example(fixtures.ShipmentListQueryTests) as fixture:
         mes_code = set_order_code(fixture.db, fixture.db.get(OrderLine, 1))
-        rows, total = list_shipments_for_grid(fixture.db, status='DONE', page=1, size=20, q='SHARED-ERP-100')
+        rows, total = list_shipments_for_grid(fixture.db, status='DONE', page=1, size=20, q=keyword)
         assert total == 4
         assert all(row.product_code == 'SHARED-ERP-100' and row.mes_product_code == mes_code for row in rows)
+        assert all(row.product_name == '거래처별 무지 품명' for row in rows)
 
 
 def test_existing_order_without_source_keeps_its_code():
@@ -177,17 +194,21 @@ def test_outsource_purchase_order_retains_each_lots_business_code():
         result = get_purchase_order_detail(fixture.db, 1)
         assert len(result.items) == 2
         assert all(row.product_code == 'SHARED-ERP-100' and row.mes_product_code for row in result.items)
+        assert all(row.product_name == '거래처별 무지 품명' for row in result.items)
         assert len({row.mes_product_code for row in result.items}) == 2
 
 
-def test_bohyun_group_search_and_display_keep_business_code():
+@pytest.mark.parametrize("keyword", ["SHARED-ERP-100", "거래처별 무지 품명"])
+def test_bohyun_group_search_and_display_keep_business_code(keyword):
     import test_bohyun_outsource_service as fixtures
     from app.services.bohyun_outsource_service import list_bohyun_outsource_groups
     with example(fixtures.BohyunOutsourceServiceTests) as fixture:
         fixture._add_work_group(group_id=1, status=None)
         for order in fixture.db.scalars(select(OrderLine)).all():
             set_order_code(fixture.db, order)
-        result = list_bohyun_outsource_groups(fixture.db, q='SHARED-ERP-100')
+        result = list_bohyun_outsource_groups(fixture.db, q=keyword)
         assert len(result.items) == 1
         assert result.items[0].items
         assert all(row.product_code == 'SHARED-ERP-100' and row.mes_product_code for row in result.items[0].items)
+        assert result.items[0].representative_product_name == '거래처별 무지 품명'
+        assert all(row.product_name == '거래처별 무지 품명' for row in result.items[0].items)

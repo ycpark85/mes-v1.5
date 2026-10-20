@@ -28,6 +28,7 @@ from app.schemas.order_line import (
 )
 from app.services.order_line_creation_service import create_order_line_with_policy
 from app.services.partner_product_mapping_service import resolve_erp_product
+from app.services.order_product_snapshot_service import preserve_legacy_order_product_snapshots
 
 
 _ORDER_NO_PATTERN = re.compile(r"^\s*(\d{4}/\d{2}/\d{2})\s*-\s*\d+\s*$")
@@ -107,6 +108,12 @@ class OrderLineBulkService:
         }
 
         expected = {item.row_number: item for item in payload.row_choices}
+        requested_names: dict[int, set[str]] = defaultdict(set)
+        for group in validation.groups:
+            for row in group.rows:
+                if choice_map.get(row.row_number, False) and row.product_id and row.parsed_product_name:
+                    requested_names[row.product_id].add(row.parsed_product_name)
+        conflicting_products = {key for key, names in requested_names.items() if len(names) > 1}
 
         results: list[OrderLineBulkCommitGroupResult] = []
         success_group_count = 0
@@ -129,7 +136,9 @@ class OrderLineBulkService:
                 created_ids: list[int] = []
 
                 with db.begin_nested():
-                    self._validate_product_name_change_choices(group, choice_map)
+                    if any(row.product_id in conflicting_products for row in group.rows):
+                        raise HTTPException(status_code=409,
+                            detail="같은 품목에 서로 다른 품목명 변경이 동시에 요청되었습니다. 변경할 이름을 하나만 선택하세요.")
 
                     group_memo = self._build_group_memo(items_by_order_no, group.erp_order_no)
 
@@ -150,19 +159,9 @@ class OrderLineBulkService:
                         if choice and choice.expected_product_id is not None and choice.expected_product_id != product.product_id:
                             raise HTTPException(status_code=409, detail="검증 후 품목 연결이 변경되었습니다. 다시 검증하세요.")
 
-                        if choice_map.get(row.row_number, False) and row.product_name_mismatch:
-                            product = db.get(Product, row.product_id)
-                            if product is None or not product.is_active:
-                                raise HTTPException(
-                                    status_code=404,
-                                    detail=f"row_number={row.row_number} 품목을 찾을 수 없습니다.",
-                                )
-
-                            if row.parsed_product_name:
-                                product.product_name = row.parsed_product_name
-                            product.product_spec = row.parsed_product_spec
-
-                            db.add(product)
+                        if choice_map.get(row.row_number, False) and product.product_name != row.parsed_product_name:
+                            preserve_legacy_order_product_snapshots(db, product)
+                            product.product_name = row.parsed_product_name
                             db.flush()
 
                         create_payload = OrderLineCreate(
@@ -178,11 +177,9 @@ class OrderLineBulkService:
                             memo=group_memo,
                         )
 
-                        source = None
-                        if mapping:
-                            source = dict(source_erp_product_code=row.product_code,
-                                          source_product_name=row.parsed_product_name,
-                                          source_product_spec=row.parsed_product_spec)
+                        source = dict(source_erp_product_code=row.product_code,
+                                      source_product_name=row.parsed_product_name,
+                                      source_product_spec=row.parsed_product_spec)
                         created = create_order_line_with_policy(db, create_payload, erp_source=source)
                         created_ids.append(created.order_line_id)
 
@@ -349,36 +346,6 @@ class OrderLineBulkService:
 
         return "\n".join(remarks)
 
-    def _validate_product_name_change_choices(self, group, choice_map: dict[int, bool]) -> None:
-        product_updates: dict[int, set[tuple[str | None, str | None]]] = defaultdict(set)
-
-        for row in group.rows:
-            if not choice_map.get(row.row_number, False):
-                continue
-
-            if row.is_unprinted_managed:
-                raise HTTPException(status_code=409, detail="무지 품목은 거래처 품명으로 공통 품목명을 변경할 수 없습니다.")
-
-            if not row.product_name_mismatch:
-                continue
-
-            if not row.can_apply_product_name_change:
-                raise HTTPException(
-                    status_code=409,
-                    detail=f"row_number={row.row_number} 품목명 변경 반영이 불가능합니다.",
-                )
-
-            product_updates[row.product_id].add(
-                (row.parsed_product_name, row.parsed_product_spec)
-            )
-
-        for product_id, values in product_updates.items():
-            if len(values) > 1:
-                raise HTTPException(
-                    status_code=409,
-                    detail=f"같은 품목(product_id={product_id})에 서로 다른 품목명 변경이 동시에 요청되었습니다.",
-                )
-
     def _resolve_partner(self, db: Session, row: _ResolvedRow) -> None:
         normalized_name = row.raw_partner_name.strip().upper()
 
@@ -421,20 +388,20 @@ class OrderLineBulkService:
         row.parsed_product_name = parsed_name
         row.parsed_product_spec = parsed_spec
 
-        if row.is_unprinted_managed:
-            if not parsed_name or len(parsed_name) > 200 or (parsed_spec and len(parsed_spec) > 100):
-                row.messages.append(self._err("erp_product_display_name", "무지 수주 품명은 1~200자, 규격은 100자 이내여야 합니다."))
+        if not parsed_name or len(parsed_name) > 200 or (parsed_spec and len(parsed_spec) > 100):
+            row.messages.append(self._err("erp_product_display_name", "발주 품명은 1~200자, 규격은 100자 이내여야 합니다."))
             return
 
-        if self._normalize_text(row.erp_product_display_name) != self._normalize_text(row.mes_product_display_name):
-            row.product_name_mismatch = True
-            row.can_apply_product_name_change = parsed_name is not None
-            row.messages.append(
-                self._warn(
-                    "erp_product_display_name",
-                    "품목코드는 같지만 ERP 품목명[규격]과 MES 품목명이 다릅니다.",
-                )
-            )
+        row.product_name_mismatch = parsed_name != (product.product_name or "").strip()
+        row.can_apply_product_name_change = row.product_name_mismatch
+        if row.product_name_mismatch:
+            message = "발주 품목명으로 저장됩니다. 체크하면 MES 기준 품목명도 변경됩니다."
+            if row.is_unprinted_managed:
+                message += " 여러 거래처가 사용하는 공통 기준 품목명입니다."
+            row.messages.append(self._warn("erp_product_display_name", message))
+        if self._normalize_text(parsed_spec) != self._normalize_text(product.product_spec):
+            row.messages.append(self._warn("erp_product_display_name",
+                "발주 규격과 MES 기준 규격이 다릅니다. 연결 도면을 확인하세요. MES 규격은 변경되지 않습니다."))
 
     def _apply_group_rules(self, db: Session, rows: list[_ResolvedRow]) -> None:
         grouped: dict[str, list[_ResolvedRow]] = defaultdict(list)
@@ -581,7 +548,7 @@ class OrderLineBulkService:
             order_qty=row.order_qty,
             status=row.status,
             product_name_mismatch=row.product_name_mismatch,
-            can_apply_product_name_change=row.can_apply_product_name_change,
+            can_apply_product_name_change=row.can_apply_product_name_change and not row.has_error,
             apply_product_name_change=False,
             messages=row.messages,
         )

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from app.services.order_line_display import order_product_code
+from app.services.order_line_display import order_product_code, order_product_name
 
 from collections import defaultdict
 from datetime import date
@@ -151,7 +151,7 @@ def list_bohyun_outsource_groups(
                 (Lot.lot_no.ilike(like))
                 | (OrderLine.order_no == normalized_q.upper())
                 | ((Product.product_code.ilike(like) | OrderLine.source_erp_product_code.ilike(like)))
-                | (Product.product_name.ilike(like))
+                | ((Product.product_name.ilike(like) | OrderLine.source_product_name.ilike(like)))
             )
             .limit(1)
         )
@@ -231,7 +231,7 @@ def list_bohyun_outsource_groups(
         )
         representative_lot = representative_row[1]
         representative_product = representative_row[3]
-        representative_product_name = representative_product.product_name
+        representative_product_name = order_product_name(representative_row[2], representative_product)
 
         group_items: list[BohyunOutsourceGroupItemOut] = []
         lot_nos: list[str] = []
@@ -241,8 +241,8 @@ def list_bohyun_outsource_groups(
             if lot.lot_no:
                 lot_nos.append(lot.lot_no)
 
-            if product.product_name:
-                product_names.append(product.product_name)
+            if order_product_name(order_line, product):
+                product_names.append(order_product_name(order_line, product))
 
             group_items.append(
                 BohyunOutsourceGroupItemOut(
@@ -254,7 +254,7 @@ def list_bohyun_outsource_groups(
                     product_id=product.product_id,
                     product_code=order_product_code(order_line, product),
                     mes_product_code=product.product_code if product else None,
-                    product_name=product.product_name,
+                    product_name=order_product_name(order_line, product),
                     cuts_per_sheet=group_item.cuts_per_sheet,
                     expected_output_qty=group_item.expected_output_qty,
                     actual_output_qty=group_item.actual_output_qty,

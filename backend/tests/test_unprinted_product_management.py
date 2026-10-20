@@ -110,18 +110,21 @@ class UnprintedProductManagementTests(unittest.TestCase):
         self.assertEqual(1, total)
         self.assertEqual("B용 포장", items[0]["product_name"])
 
-    def test_managed_name_difference_does_not_offer_master_rename(self):
+    def test_managed_master_rename_is_explicit_and_preserves_customer_snapshot(self):
         self.mapping()
         preview = order_line_bulk_service.validate_bulk(self.db, OrderLineBulkValidateRequest(items=[self.row()]))
         row = preview.groups[0].rows[0]
-        self.assertEqual("READY", row.status)
-        self.assertFalse(row.can_apply_product_name_change)
+        self.assertEqual("REVIEW", row.status)
+        self.assertTrue(row.can_apply_product_name_change)
+        self.assertFalse(row.apply_product_name_change)
+        self.assertTrue(any("공통 기준 품목명" in item.message for item in row.messages))
         self.assertEqual(self.first.product_code, row.mes_product_code)
         self.assertEqual("D-002", row.drawing_no)
         result = self.commit([self.row()], [OrderLineBulkCommitRowChoice(row_number=1, apply_product_name_change=True,
             expected_product_id=row.product_id, expected_mapping_id=row.mapping_id)])
-        self.assertEqual(1, result.failure_group_count)
-        self.assertEqual("공통 무지", self.db.get(Product, self.first.product_id).product_name)
+        self.assertEqual(1, result.success_group_count)
+        self.assertEqual("납품용 무지", self.db.get(Product, self.first.product_id).product_name)
+        self.assertEqual("납품용 무지", self.db.scalar(select(OrderLine)).source_product_name)
 
     def test_printed_name_change_workflow_still_works(self):
         result = self.commit([self.row(code="P-001", partner="Customer", name="새 인쇄명 [PRINT-SPEC]")],
@@ -129,7 +132,28 @@ class UnprintedProductManagementTests(unittest.TestCase):
         self.assertEqual(1, result.success_group_count)
         self.assertEqual("새 인쇄명", self.db.get(Product, 1).product_name)
         order = self.db.scalar(select(OrderLine))
-        self.assertIsNone(order.source_product_name)
+        self.assertEqual("새 인쇄명", order.source_product_name)
+        self.assertEqual("PRINT-SPEC", order.source_product_spec)
+        self.assertIsNone(self.db.get(Product, 1).product_spec)
+
+    def test_master_rename_keeps_other_partner_order_and_mapping_names(self):
+        self.mapping(2, name="A 연결명")
+        second = self.mapping(3, name="B 연결명")
+        self.assertEqual(1, self.commit([self.row(1, "업체B", name="B 발주명 [B 규격]")]).success_group_count)
+        old_order = self.db.scalar(select(OrderLine))
+        incoming = self.row(2, "업체A", name="A 새 이름 [A 규격]")
+        preview = order_line_bulk_service.validate_bulk(self.db, OrderLineBulkValidateRequest(items=[incoming]))
+        reviewed = preview.groups[0].rows[0]
+        result = self.commit([incoming], [OrderLineBulkCommitRowChoice(
+            row_number=2, expected_product_id=reviewed.product_id,
+            expected_mapping_id=reviewed.mapping_id, apply_product_name_change=True)])
+        self.assertEqual(1, result.success_group_count)
+        self.db.refresh(old_order)
+        self.db.refresh(second)
+        self.assertEqual("B 발주명", old_order.source_product_name)
+        self.assertEqual("B 연결명", second.customer_product_name)
+        product = self.db.get(Product, self.first.product_id)
+        self.assertEqual(("A 새 이름", "100×200"), (product.product_name, product.product_spec))
 
     def test_duplicate_partner_code_blocked_in_service_and_database(self):
         self.mapping(code=" muji-100 ")
@@ -193,7 +217,7 @@ class UnprintedProductManagementTests(unittest.TestCase):
         self.mapping(product=1, code="P-001")
         self.db.refresh(old)
         self.assertEqual(1, old.product_id)
-        self.assertIsNone(old.source_product_name)
+        self.assertEqual("제품", old.source_product_name)
 
     def test_legacy_registration_cannot_shadow_managed_erp_code(self):
         self.mapping()

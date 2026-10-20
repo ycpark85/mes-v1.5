@@ -81,6 +81,7 @@
                 BorderBrush="#DDD"
                 BorderThickness="1"
                 CornerRadius="4">
+            <StackPanel>
             <UniformGrid Rows="1" Columns="4">
                 <StackPanel>
                     <TextBlock Text="총 행수" FontWeight="Bold" />
@@ -99,6 +100,9 @@
                     <TextBlock Text="{Binding ErrorRowCount}" />
                 </StackPanel>
             </UniformGrid>
+                <TextBlock Margin="0,10,0,0" TextWrapping="Wrap"
+                           Text="발주파일의 품목명·규격으로 저장합니다. 'MES 기준 품목명도 변경'을 체크한 행만 기준 품목명도 변경하며, 기존 발주 품명과 MES 기준 규격은 유지합니다." />
+            </StackPanel>
         </Border>
 
         <DataGrid Grid.Row="2"
@@ -108,25 +112,28 @@
                   CanUserAddRows="False"
                   IsReadOnly="False">
             <DataGrid.Columns>
-                <DataGridTextColumn Header="행번호" Binding="{Binding RowNumber}" Width="70" />
-                <DataGridTextColumn Header="ERP주문번호" Binding="{Binding ErpOrderNo}" Width="140" />
-                <DataGridTextColumn Header="품목코드" Binding="{Binding ProductCode}" Width="120" />
-                <DataGridTextColumn Header="ERP 품목명[규격]" Binding="{Binding ErpProductDisplayName}" Width="220" />
-                <DataGridTextColumn Header="거래처" Binding="{Binding PartnerName}" Width="120"/>
-                        <DataGridTextColumn Header="MES 코드" Binding="{Binding MesProductCode}" Width="130"/>
-                        <DataGridTextColumn Header="연결 도면" Binding="{Binding DrawingNo}" Width="120"/>
-                        <DataGridTextColumn Header="MES 품목명" Binding="{Binding MesProductDisplayName}" Width="220" />
-                <DataGridTextColumn Header="수량" Binding="{Binding OrderQty}" Width="90" />
-                <DataGridTextColumn Header="상태" Binding="{Binding Status}" Width="90" />
-                <DataGridTemplateColumn Header="품목명변경" Width="100">
+                <DataGridTextColumn IsReadOnly="True" Header="행번호" Binding="{Binding RowNumber}" Width="70" />
+                <DataGridTextColumn IsReadOnly="True" Header="ERP주문번호" Binding="{Binding ErpOrderNo}" Width="140" />
+                <DataGridTextColumn IsReadOnly="True" Header="거래처" Binding="{Binding PartnerName}" Width="120"/>
+                <DataGridTextColumn IsReadOnly="True" Header="품목코드" Binding="{Binding ProductCode}" Width="120" />
+                <DataGridTextColumn IsReadOnly="True" Header="발주 품목명[규격]" Binding="{Binding ErpProductDisplayName}" Width="220" />
+                <DataGridTextColumn IsReadOnly="True" Header="MES 기준 품목명[규격]" Binding="{Binding MesProductDisplayName}" Width="220" />
+                <DataGridTemplateColumn Header="MES 기준 품목명도 변경" Width="180">
                     <DataGridTemplateColumn.CellTemplate>
                         <DataTemplate>
                             <CheckBox IsChecked="{Binding ApplyProductNameChange, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                      IsEnabled="{Binding CanApplyProductNameChange}" />
+                                      IsEnabled="{Binding CanApplyProductNameChange}"
+                                      HorizontalAlignment="Center" VerticalAlignment="Center"
+                                      AutomationProperties.Name="MES 기준 품목명도 변경"
+                                      ToolTip="체크하지 않아도 발주파일 품목명으로 등록됩니다. 체크하면 공통 MES 기준 품목명도 변경합니다. 규격은 변경하지 않습니다." />
                         </DataTemplate>
                     </DataGridTemplateColumn.CellTemplate>
                 </DataGridTemplateColumn>
-                <DataGridTextColumn Header="메시지" Binding="{Binding MessageSummary}" Width="300" />
+                <DataGridTextColumn IsReadOnly="True" Header="MES 코드" Binding="{Binding MesProductCode}" Width="130"/>
+                <DataGridTextColumn IsReadOnly="True" Header="연결 도면" Binding="{Binding DrawingNo}" Width="120"/>
+                <DataGridTextColumn IsReadOnly="True" Header="수량" Binding="{Binding OrderQty}" Width="90" />
+                <DataGridTextColumn IsReadOnly="True" Header="상태" Binding="{Binding Status}" Width="90" />
+                <DataGridTextColumn IsReadOnly="True" Header="메시지" Binding="{Binding MessageSummary}" Width="300" />
             </DataGrid.Columns>
         </DataGrid>
         <Grid Grid.RowSpan="3"

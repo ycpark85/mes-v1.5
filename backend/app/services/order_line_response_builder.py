@@ -8,7 +8,7 @@ from app.models.order_line_plan_history import OrderLinePlanHistory
 from app.models.partner import Partner
 from app.models.product import Product
 from app.schemas.order_line import OrderLineOut
-from app.services.order_line_display import to_plan_type_display, order_product_code
+from app.services.order_line_display import to_plan_type_display, order_product_code, order_product_name
 
 
 def build_order_line_out(
@@ -29,7 +29,7 @@ def build_order_line_out(
     out.partner_name = partner.name if partner else None
     out.product_code = order_product_code(order_line, product)
     out.mes_product_code = product.product_code if product else None
-    out.product_name = order_line.source_product_name or (product.product_name if product else None)
+    out.product_name = order_product_name(order_line, product)
 
     if plan_history is not None:
         out.plan_type = plan_history.plan_type

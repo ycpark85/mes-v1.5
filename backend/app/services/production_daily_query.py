@@ -78,7 +78,8 @@ def list_production_daily_rows(
 ) -> tuple[list[dict], int]:
     normalized_status = _normalize_status(status)
 
-    stmt = select(ProductionProgressSnapshot, OrderLine.source_erp_product_code).join(
+    stmt = select(ProductionProgressSnapshot, OrderLine.source_erp_product_code,
+                  OrderLine.source_product_name).join(
         OrderLine, OrderLine.order_line_id == ProductionProgressSnapshot.order_line_id
     ).where(
         ProductionProgressSnapshot.status == normalized_status
@@ -95,6 +96,7 @@ def list_production_daily_rows(
             or_(
                 ProductionProgressSnapshot.product_code.ilike(keyword),
                 OrderLine.source_erp_product_code.ilike(keyword),
+                OrderLine.source_product_name.ilike(keyword),
                 ProductionProgressSnapshot.product_name.ilike(keyword),
             )
         )
@@ -123,8 +125,9 @@ def list_production_daily_rows(
             _snapshot_to_row(snapshot, today=today),
             product_code=source_code or snapshot.product_code,
             mes_product_code=snapshot.product_code,
+            product_name=source_name or snapshot.product_name,
         )
-        for snapshot, source_code in rows
+        for snapshot, source_code, source_name in rows
     ], total
 
 

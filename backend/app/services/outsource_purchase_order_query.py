@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from app.services.order_line_display import order_product_code
+from app.services.order_line_display import order_product_code, order_product_name, order_product_spec
 
 from datetime import date
 
@@ -87,7 +87,7 @@ def build_purchase_order_out(
                 line_no=order_line.line_no,
                 product_code=order_product_code(order_line, product),
                 mes_product_code=product.product_code if product else None,
-                product_name=product.product_name,
+                product_name=order_product_name(order_line, product),
                 lot_qty=lot.lot_qty,
             )
         )
@@ -162,7 +162,7 @@ def build_purchase_order_item_out(
         line_no=order_line.line_no if order_line else None,
         product_code=order_product_code(order_line, product),
         mes_product_code=product.product_code if product else None,
-        product_name=product.product_name if product else None,
+        product_name=order_product_name(order_line, product),
         lot_qty=lot.lot_qty if lot else None,
     )
 
@@ -513,7 +513,7 @@ def list_purchase_order_targets(
                 product_id=product.product_id,
                 product_code=order_product_code(order_line, product),
                 mes_product_code=product.product_code if product else None,
-                product_name=product.product_name,
+                product_name=order_product_name(order_line, product),
                 representative_lot_id=work_group.representative_lot_id,
                 customer_partner_id=source_partner.partner_id,
                 customer_partner_name=source_partner.name,
@@ -529,7 +529,7 @@ def list_purchase_order_targets(
                 files=file_map.get(instruction.outsource_work_instruction_id, []),
                 panel_width_mm=product.panel_width_mm,
                 panel_length_mm=product.panel_length_mm,
-                product_spec=product.product_spec,
+                product_spec=order_product_spec(order_line, product),
                 cut_qty_per_panel=product.cut_qty_per_panel,
                 length_m=work_group.length_m,
                 sheet_qty=work_group.sheet_qty,

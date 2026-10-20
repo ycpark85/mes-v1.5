@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from app.services.order_line_display import order_product_code
+from app.services.order_line_display import order_product_code, order_product_name, order_product_spec
 
 from collections.abc import Callable
 from datetime import date, datetime, timezone
@@ -130,8 +130,8 @@ def get_lot_trace_detail_for_lot(
             product_id=product.product_id,
             product_code=order_product_code(order_line, product),
             mes_product_code=product.product_code if product else None,
-            product_name=product.product_name,
-            product_spec=product.product_spec,
+            product_name=order_product_name(order_line, product),
+            product_spec=order_product_spec(order_line, product),
             panel_width_mm=product.panel_width_mm,
             panel_length_mm=product.panel_length_mm,
             cut_qty_per_panel=product.cut_qty_per_panel,

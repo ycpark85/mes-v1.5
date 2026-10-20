@@ -106,7 +106,7 @@ def resolve_erp_product(db: Session, partner_id: int | None, code: str, *, lock:
     if mapping:
         product_stmt = select(Product).where(Product.product_id == mapping.product_id)
         if lock:
-            product_stmt = product_stmt.with_for_update(read=True)
+            product_stmt = product_stmt.with_for_update()
         product = db.scalar(product_stmt.execution_options(populate_existing=True))
         if not product or not product.is_active or not product.is_unprinted_managed:
             raise HTTPException(status_code=409, detail="연결된 무지 품목이 미사용 상태입니다.")
@@ -127,7 +127,9 @@ def resolve_erp_product(db: Session, partner_id: int | None, code: str, *, lock:
 
 def manual_order_source(db: Session, product: Product, partner_id: int) -> dict:
     if not product.is_unprinted_managed:
-        return {}
+        return dict(source_erp_product_code=product.product_code,
+                    source_product_name=product.product_name,
+                    source_product_spec=product.product_spec)
     mappings = db.scalars(select(PartnerProductMapping).where(
         PartnerProductMapping.product_id == product.product_id,
         PartnerProductMapping.partner_id == partner_id,

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from app.services.order_line_display import order_product_code
+from app.services.order_line_display import order_product_code, order_product_name, order_product_spec
 
 from datetime import date
 
@@ -93,7 +93,7 @@ def build_work_instruction_out(
                 line_no=order_line.line_no,
                 product_code=order_product_code(order_line, product),
                 mes_product_code=product.product_code if product else None,
-                product_name=product.product_name,
+                product_name=order_product_name(order_line, product),
                 lot_qty=lot.lot_qty,
                 process_type=item.process_type,
             )
@@ -131,7 +131,7 @@ def list_candidate_lots(
             (Lot.lot_no.ilike(like))
             | (OrderLine.order_no == normalized_q.upper())
             | ((Product.product_code.ilike(like) | OrderLine.source_erp_product_code.ilike(like)))
-            | (Product.product_name.ilike(like))
+            | ((Product.product_name.ilike(like) | OrderLine.source_product_name.ilike(like)))
             | (Partner.name.ilike(like))
         )
 
@@ -198,7 +198,7 @@ def list_candidate_lots(
                 product_id=product.product_id,
                 product_code=order_product_code(order_line, product),
                 mes_product_code=product.product_code if product else None,
-                product_name=product.product_name,
+                product_name=order_product_name(order_line, product),
                 customer_partner_id=partner.partner_id,
                 customer_partner_name=partner.name,
                 lot_qty=lot.lot_qty,
@@ -206,7 +206,7 @@ def list_candidate_lots(
                 available_process_types=available,
                 panel_width_mm=product.panel_width_mm,
                 panel_length_mm=product.panel_length_mm,
-                product_spec=product.product_spec,
+                product_spec=order_product_spec(order_line, product),
                 cut_qty_per_panel=product.cut_qty_per_panel,
             )
         )
@@ -275,7 +275,7 @@ def list_work_groups(
             .where(
                 (Lot.lot_no.like(like))
                 | ((Product.product_code.ilike(like) | OrderLine.source_erp_product_code.ilike(like)))
-                | (Product.product_name.ilike(like))
+                | ((Product.product_name.ilike(like) | OrderLine.source_product_name.ilike(like)))
             )
         )
         condition = (
@@ -534,11 +534,11 @@ def build_work_group_detail(
 
     for item, lot, order_line, product in item_rows:
         lot_nos.append(lot.lot_no)
-        product_names.append(product.product_name)
+        product_names.append(order_product_name(order_line, product))
 
         if lot.lot_id == work_group.representative_lot_id:
             representative_lot_no = lot.lot_no
-            representative_product_name = product.product_name
+            representative_product_name = order_product_name(order_line, product)
 
         lot_outputs.append(
             OutsourceWorkGroupLotOut(
@@ -549,7 +549,7 @@ def build_work_group_detail(
                 line_no=order_line.line_no,
                 product_code=order_product_code(order_line, product),
                 mes_product_code=product.product_code if product else None,
-                product_name=product.product_name,
+                product_name=order_product_name(order_line, product),
                 lot_qty=lot.lot_qty,
                 cuts_per_sheet=item.cuts_per_sheet,
                 expected_output_qty=item.expected_output_qty,

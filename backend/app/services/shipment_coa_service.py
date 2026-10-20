@@ -21,6 +21,7 @@ from app.models.routing_template_step import RoutingTemplateStep
 from app.models.shipment_coa import ShipmentCoa
 from app.models.shipment_line import ShipmentLine
 from app.schemas.shipment_coa import ShipmentCoaUpdateRequest
+from app.services.order_line_display import order_product_name, order_product_spec
 
 
 def _clean_text(value: Optional[str], default: str = "-") -> str:
@@ -279,8 +280,8 @@ def get_or_create_shipment_coa(db: Session, order_line_id: int) -> ShipmentCoa:
     coa = ShipmentCoa(
         order_line_id=first_order_line.order_line_id,
         product_id=first_product.product_id,
-        product_name_snapshot=_clean_text(first_product.product_name),
-        product_spec_snapshot=_clean_text(first_product.product_spec),
+        product_name_snapshot=_clean_text(order_product_name(first_order_line, first_product)),
+        product_spec_snapshot=_clean_text(order_product_spec(first_order_line, first_product)),
         material_snapshot="COATED TYVEK",
         partner_name_snapshot=_clean_text(first_partner.name),
         lot_nos_snapshot=_build_lot_text(all_lot_nos),

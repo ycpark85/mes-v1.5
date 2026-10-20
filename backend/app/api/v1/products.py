@@ -24,6 +24,7 @@ from app.models.user import User
 from app.schemas.partner_product_mapping import PartnerProductMappingCreate, PartnerProductMappingOut, PartnerProductMappingListOut
 from app.services import partner_product_mapping_service as mappings
 from app.services.product_registration_service import prepare_product, validate_management_change
+from app.services.order_product_snapshot_service import preserve_legacy_order_product_snapshots
 
 
 
@@ -148,7 +149,8 @@ def update_product(
     payload: ProductUpdate = None,
     db: Session = Depends(get_db),
 ):
-    obj = db.scalar(select(Product).where(Product.product_id == product_id).with_for_update())
+    obj = db.scalar(select(Product).where(Product.product_id == product_id).with_for_update()
+                    .execution_options(populate_existing=True))
     if obj is None:
         raise HTTPException(status_code=404, detail="Product not found")
     validate_management_change(db, obj, payload)
@@ -158,6 +160,10 @@ def update_product(
     new_rt_id = payload.routing_template_id if payload.routing_template_id is not None else obj.routing_template_id
     if payload.drawing_id is not None or payload.routing_template_id is not None:
         _ensure_fk_exists(db, new_drawing_id, new_rt_id)
+
+    if ((payload.product_name is not None and payload.product_name != obj.product_name)
+            or (payload.product_spec is not None and payload.product_spec != obj.product_spec)):
+        preserve_legacy_order_product_snapshots(db, obj)
 
     # 필드 반영
     if payload.product_name is not None:
